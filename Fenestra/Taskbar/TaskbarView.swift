@@ -65,7 +65,7 @@ struct TaskbarView: View {
                     if wins.isEmpty {
                         AppButton(item: item, badge: badges.badge(for: item), scope: scope,
                                   hasWindowsHere: !filtered || all.contains(where: isHere) || all.isEmpty,
-                                  label: separate && item.isRunning ? item.name : nil,
+                                  label: separate && item.looksRunning(all) ? item.name : nil,
                                   onDrag: { dx in dragID = item.id; dragOffset = dx },
                                   onDragEnd: { dx in finishDrag(item, index: index, dx: dx) })
                     } else {
@@ -102,6 +102,8 @@ struct TaskbarView: View {
 
     /// Main taskbar: pinned apps and apps without a window stay there. Other taskbars: apps with a window on that display.
     private func showsItem(_ item: AppItem, _ wins: [WindowTracker.Win]) -> Bool {
+        // Finder unpinned and without windows: gone from the taskbar, like a closed app.
+        if !item.pinned && item.isRunning && !item.looksRunning(wins) { return false }
         guard filtered else { return true }
         if wins.contains(where: isHere) { return true }
         return isMain && (item.pinned || wins.isEmpty)
@@ -198,6 +200,20 @@ struct TaskViewButton: View {
     }
 }
 
+extension AppItem {
+    static let finderID = "com.apple.finder"
+
+    /// Whether the taskbar shows the app as open (running pill, label, hover previews). Finder always runs (it
+    /// draws the desktop), so it counts as open only while it has a window, open or minimized: closing its last
+    /// window looks like closing an app, as with File Explorer. Without Accessibility its windows can't be seen,
+    /// so it then counts as open like any running app.
+    @MainActor func looksRunning(_ wins: [WindowTracker.Win]) -> Bool {
+        guard isRunning else { return false }
+        guard id == AppItem.finderID, Permissions.shared.accessibility else { return true }
+        return !wins.isEmpty
+    }
+}
+
 /// Red unread badge, top-right of an icon (Windows shows a small colored count).
 /// "99+" used to wrap onto two lines inside the icon-sized overlay and bulge out of the circle: one line, never
 /// squeezed, slightly smaller text for three characters. Counts over 99 show "99+", as on Windows.
@@ -238,7 +254,7 @@ struct AppButton: View {
     @ObservedObject private var tracker = WindowTracker.shared
     @Environment(\.colorScheme) private var scheme
 
-    private var running: Bool { item.isRunning && hasWindowsHere }
+    private var running: Bool { item.looksRunning(tracker.windows(for: item)) && hasWindowsHere }
     /// Scoped: highlighted only when the app's focused window is on this taskbar's display.
     private var active: Bool {
         guard item.isActive, running else { return false }
