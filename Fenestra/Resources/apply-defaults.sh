@@ -2,7 +2,7 @@
 # Fenestra: apply the macOS defaults the shell needs. Idempotent; run by Fenestra at every start.
 # Before a key is changed for the first time, its original value is saved to
 #   ~/Library/Application Support/Fenestra/defaults-backup.txt
-# and restore.sh puts it back. The README lists every key below and why.
+# and restore.sh puts it back. DEVELOPMENT.md lists every key below and why.
 
 set -u
 SUPPORT="$HOME/Library/Application Support/Fenestra"

@@ -336,7 +336,7 @@ final class DisplayMemory {
         return out
     }
 
-    /// For the README checklist and the log: what is remembered right now.
+    /// For the DEVELOPMENT.md checklist and the log: what is remembered right now.
     func describe() -> String {
         "displays=\(displays.count) placements=\(placements.count) displaced=\(displaced.count) frozen=\(frozen)"
     }
