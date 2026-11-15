@@ -1,0 +1,32 @@
+name: Bug report
+description: Something in Fenestra doesn't work or look right
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead? Screenshots help a lot.
+    validations:
+      required: true
+  - type: input
+    id: fenestra
+    attributes:
+      label: Fenestra version
+      description: Taskbar settings > Fenestra tab.
+      placeholder: "1.1"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and Mac
+      placeholder: "macOS 26.1, MacBook Air M3"
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log (optional)
+      description: The end of ~/Library/Logs/Fenestra-app.log, if it shows something relevant.
+      render: text

@@ -7,9 +7,9 @@ No Xcode or developer tools are needed.
 
 ## 1. Copy Fenestra to Applications
 
-1. Open **Fenestra-1.0.dmg** (double-click it).
+1. Open **Fenestra.dmg** (double-click it).
 2. In the window that opens, drag **Fenestra** onto the **Applications** folder.
-3. Eject the disk image (the eject button next to "Fenestra 1.0" in Finder's sidebar).
+3. Eject the disk image (the eject button next to "Fenestra" in Finder's sidebar).
 
 ## 2. Open Fenestra the first time
 

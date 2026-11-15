@@ -8,6 +8,8 @@
 	<string>Fenestra</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
@@ -26,15 +28,15 @@
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>LSUIElement</key>
 	<true/>
-	<key>NSPrincipalClass</key>
-	<string>NSApplication</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Fenestra uses System Events to restore the menu bar setting and loginwindow to sleep, restart and shut down.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Fenestra's Quick Settings turn Bluetooth on and off and list your Bluetooth devices.</string>
 	<key>NSLocationUsageDescription</key>
 	<string>macOS only shows the name of your Wi-Fi network to apps with Location access. Fenestra uses it to show the network name in Quick Settings. Your location is never used or stored.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>macOS only shows the name of your Wi-Fi network to apps with Location access. Fenestra uses it to show the network name in Quick Settings. Your location is never used or stored.</string>
-	<key>NSAppleEventsUsageDescription</key>
-	<string>Fenestra uses System Events to restore the menu bar setting and loginwindow to sleep, restart and shut down.</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
 </dict>
 </plist>

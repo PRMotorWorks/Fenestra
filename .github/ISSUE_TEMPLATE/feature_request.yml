@@ -1,0 +1,11 @@
+name: Feature request
+description: A Windows 11 feature you miss, or an idea to make Fenestra better
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like?
+      description: If it's something from Windows 11, how does it work there?
+    validations:
+      required: true
