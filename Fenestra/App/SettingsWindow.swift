@@ -142,6 +142,12 @@ struct WindowsSettingsView: View {
                     ForEach(CaptionSize.allCases) { Text($0.label).tag($0) }
                 }
                 .disabled(!s.captionButtons)
+                Toggle("Keep the buttons on a window while I drag it", isOn: $s.captionFollowDrag)
+                    .disabled(!s.captionButtons)
+                Text("Off: the buttons hide while a window moves and the traffic lights show until you let go. "
+                     + "Turn it off if the buttons look choppy while dragging (more noticeable on high refresh "
+                     + "rate displays).")
+                    .foregroundStyle(.secondary)
                 Toggle("Closing an app's last window quits the app (Finder stays open)", isOn: $s.quitOnLastWindow)
                 Text("Off: apps keep running after their last window closes, as on a Mac. Maximize fills the screen "
                      + "above the taskbar, never a full-screen Space. Granting Screen Recording lets the buttons "

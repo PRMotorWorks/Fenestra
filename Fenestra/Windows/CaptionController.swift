@@ -95,9 +95,9 @@ final class CaptionController {
     private var chromiumCache: [String: Bool] = [:]
 
     private var enabled: Bool { AppSettings.shared.captionButtons }
-    /// `defaults write local.fenestra.Fenestra captionHideWhileDragging -bool true` brings back the old
-    /// behavior (buttons hidden while a window is dragged). Read at each press.
-    private var followDrags: Bool { !UserDefaults.standard.bool(forKey: "captionHideWhileDragging") }
+    /// Settings > Windows > "Keep the buttons on a window while I drag it". Off: the old behavior (buttons
+    /// hidden while a window is dragged). Read at each press.
+    private var followDrags: Bool { AppSettings.shared.captionFollowDrag }
 
     // MARK: Start / settings
 

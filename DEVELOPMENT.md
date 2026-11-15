@@ -270,11 +270,14 @@ Every window with traffic lights gets Windows 11 minimize, maximize/restore and 
 small panel of Fenestra's, ordered directly above that window, covering the traffic lights. It follows the window
 through Accessibility events (no polling). While you drag a window by its title bar the buttons move with it
 (since 2026-11-15; before, they hid during the drag and the traffic lights showed). See "Following a dragged
-window" below for how, and what is left of the old wobble.
+window" below for how, and what is left of the old wobble. Settings > Windows > "Keep the buttons on a window
+while I drag it" (on by default) turns it off: then the buttons hide during a drag and the traffic lights show,
+for anyone who finds the following choppy (more noticeable on high refresh rate displays).
 After every click and app switch Fenestra also checks the window order once and puts any panel that fell behind
 its window back on top (some apps, Electron ones included, raise their windows without telling Accessibility).
 Glyphs are drawn by Fenestra (vector paths, 10 x 10 pt like Segoe Fluent Icons); no Microsoft assets.
-Options: Fenestra settings > **Windows** (turn it off, button size, Snap Layouts on hover).
+Options: Fenestra settings > **Windows** (turn it off, button size, keep the buttons on a dragged window,
+Snap Layouts on hover).
 
 | Button | Does |
 |---|---|
@@ -399,7 +402,6 @@ Settings for testing (none needed normally, `defaults write local.fenestra.Fenes
 
 | Key | Effect |
 |---|---|
-| `captionHideWhileDragging -bool true` | old behavior: buttons hidden while a window is dragged |
 | `captionDragMove appkit` | move the panel through AppKit (`setFrame` + flush) instead of `SLSMoveWindow` |
 | `captionDragLagMs <ms>` | how far back along the motion the panel is placed for window-server drags (default 3) |
 | `captionDragTrace -bool true` | per-event trace to ~/Library/Logs/Fenestra-follow.txt, plus a capture of the display during each drag counting frames that show traffic lights (`dragcapture:` lines in the app log, crops in ~/Library/Logs/Fenestra-dragtest/frame-*.png). Costly: only for measuring |

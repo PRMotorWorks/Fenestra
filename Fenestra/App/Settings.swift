@@ -169,6 +169,9 @@ final class AppSettings: ObservableObject {
         didSet { d.set(captionSize.rawValue, forKey: "captionSize"); CaptionController.shared.settingsChanged() }
     }
     @Published var snapLayoutsOnHover: Bool { didSet { d.set(snapLayoutsOnHover, forKey: "snapLayoutsOnHover") } }
+    /// On: the buttons move with a dragged window. Off: they hide during the drag and the traffic lights show
+    /// (as before 2026-11-15), for anyone who finds the following choppy. Read at each title bar press.
+    @Published var captionFollowDrag: Bool { didSet { d.set(captionFollowDrag, forKey: "captionFollowDrag") } }
     /// Phase 4: Settings > System > Multitasking > Snap windows (master switch: edge drags and Control+Option+arrows).
     @Published var snapWindows: Bool { didSet { d.set(snapWindows, forKey: "snapWindows"); HotKeys.shared.configure() } }
     @Published var snapBarOnDrag: Bool { didSet { d.set(snapBarOnDrag, forKey: "snapBarOnDrag") } }
@@ -247,6 +250,8 @@ final class AppSettings: ObservableObject {
         captionButtons = bool("captionButtons", true)
         captionSize = CaptionSize(rawValue: d.string(forKey: "captionSize") ?? "") ?? .automatic
         snapLayoutsOnHover = bool("snapLayoutsOnHover", true)
+        // The earlier hidden switch `captionHideWhileDragging` decides the default if it was set.
+        captionFollowDrag = bool("captionFollowDrag", !d.bool(forKey: "captionHideWhileDragging"))
         snapWindows = bool("snapWindows", true)
         snapBarOnDrag = bool("snapBarOnDrag", true)
         snapAssist = bool("snapAssist", true)
