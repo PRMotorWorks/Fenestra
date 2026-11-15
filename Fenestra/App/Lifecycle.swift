@@ -182,7 +182,14 @@ enum Lifecycle {
         DispatchQueue.global(qos: .utility).async {
             let r = Shell.run("/bin/bash", [script], env: ["FENESTRA_HIDE_MENUBAR": hide ? "1" : "0", "FENESTRA_OFF": off])
             let out = r.output.trimmingCharacters(in: .whitespacesAndNewlines)
-            DispatchQueue.main.async { Log.write("defaults: \(out)") }
+            DispatchQueue.main.async {
+                Log.write("defaults: \(out)")
+                MainActor.assumeIsolated {
+                    CaptionController.refreshMenuBarHidden()
+                    Log.write("workarea: menu bar \(CaptionController.menuBarHidden ? "hidden" : "shown"), "
+                              + "top of main work area y=\(Int(CaptionController.workArea(screen: NSScreen.screens[0]).minY))")
+                }
+            }
         }
     }
 

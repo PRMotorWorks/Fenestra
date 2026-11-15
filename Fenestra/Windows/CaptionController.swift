@@ -929,9 +929,33 @@ final class CaptionController {
     }
 
     /// Work area of one display, AX coordinates.
+    /// Whether macOS auto-hides the menu bar, read from the global preference (cached, refreshed when it changes).
+    /// `NSScreen.visibleFrame` keeps the menu bar's 30 pt when Fenestra started while the menu bar was shown (after
+    /// a quit restored it) and then hid it: maximize and snaps left a gap at the top (user report 2026-11-15).
+    static var menuBarHidden: Bool = readMenuBarHidden()
+    private static var menuBarObserver: NSObjectProtocol?
+
+    static func readMenuBarHidden() -> Bool {
+        CFPreferencesAppSynchronize(kCFPreferencesAnyApplication)
+        return (CFPreferencesCopyAppValue("_HIHideMenuBar" as CFString, kCFPreferencesAnyApplication) as? Bool) ?? false
+    }
+
+    /// Called at launch and after Fenestra applies its macOS changes; also follows the system notification.
+    static func refreshMenuBarHidden() {
+        menuBarHidden = readMenuBarHidden()
+        guard menuBarObserver == nil else { return }
+        menuBarObserver = DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("AppleInterfaceMenuBarHidingChangedNotification"), object: nil, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { CaptionController.menuBarHidden = CaptionController.readMenuBarHidden() }
+        }
+    }
+
     static func workArea(screen: NSScreen) -> CGRect {
         let ph = primaryHeight
         var vf = screen.visibleFrame
+        // Menu bar auto-hidden: the work area reaches the top of the screen, whatever visibleFrame still says.
+        if menuBarHidden, vf.maxY < screen.frame.maxY { vf.size.height = screen.frame.maxY - vf.minY }
         if TaskbarController.shared.hasTaskbar(screen) {
             let bottom = screen.frame.minY + TaskbarController.shared.reservedHeight
             if vf.minY < bottom { vf.size.height -= bottom - vf.minY; vf.origin.y = bottom }
