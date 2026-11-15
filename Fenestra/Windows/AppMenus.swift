@@ -24,16 +24,34 @@ private final class AXRef: NSObject {
 }
 
 /// Phase 6: an app's menu bar (Apple menu, app menu, File, Edit, ...) as a native dropdown, for when the macOS
-/// menu bar is hidden. Read through Accessibility (`kAXMenuBarAttribute`), one menu at a time: a submenu is read
-/// only when it opens (NSMenuDelegate), so opening the dropdown costs ~1 ms and each submenu ~10 ms. Choosing an
-/// item presses the real menu item (AXPress), so the app runs its own command, with its own enabled state.
-/// Also mirrors menu bar icons' menus above the tray (MenuExtras) and builds the caption's window menu.
+/// menu bar is hidden. Read through Accessibility (`kAXMenuBarAttribute`). The dropdown itself costs ~1 ms; its
+/// menus are then read in the background in order (`MenuPrefetch`), each item in one AX call (`MenuReader`), so a
+/// menu is usually ready before the pointer reaches it. Reading each menu on the main thread only as it opened
+/// (8 AX calls per item) made the dropdown stutter when swept across quickly and each menu open late.
+/// Choosing an item presses the real menu item (AXPress), so the app runs its own command, with its own enabled
+/// state. Also mirrors menu bar icons' menus above the tray (MenuExtras) and builds the caption's window menu.
 @MainActor
 final class AppMenus: NSObject, NSMenuDelegate {
     static let shared = AppMenus()
 
     /// Submenu -> the AX element whose AXMenu child it mirrors. Cleared each time a new dropdown opens.
-    private var sources: [ObjectIdentifier: AXUIElement] = [:]
+    private var sources: [ObjectIdentifier: AXUIElement] = [:] { didSet { if sources.isEmpty { filled.removeAll() } } }
+    /// Submenus already filled in this dropdown. AppKit asks again every time one reopens; refilling it threw away
+    /// AppKit's cached layout, so sweeping back and forth rebuilt each submenu window from scratch (profiled
+    /// 2026-11-16: submenu window setup was most of the main thread's time while the dropdown was open).
+    private var filled: Set<ObjectIdentifier> = []
+    /// Background reads of the open dropdown's menus; cancelled when it closes.
+    private var prefetch: MenuPrefetch?
+    private let trace = MenuTrace()
+    var traceRef: MenuTrace { trace }
+
+    nonisolated func menuWillOpen(_ menu: NSMenu) {
+        MainActor.assumeIsolated { trace.opened(menu) }
+    }
+
+    nonisolated func menu(_ menu: NSMenu, willHighlight item: NSMenuItem?) {
+        MainActor.assumeIsolated { trace.highlighted() }
+    }
 
     // MARK: Opening
 
@@ -41,7 +59,12 @@ final class AppMenus: NSObject, NSMenuDelegate {
     func popUpAppMenu(pid: pid_t, at point: NSPoint) {
         sources.removeAll()
         guard let menu = appMenu(pid: pid) else { Log.write("appmenus: pid \(pid) has no menu bar"); return }
+        startPrefetch(menu)
+        menu.delegate = self
+        trace.begin()
         menu.popUp(positioning: nil, at: point, in: nil)
+        trace.end()
+        endPrefetch()
         sources.removeAll()
     }
 
@@ -69,7 +92,9 @@ final class AppMenus: NSObject, NSMenuDelegate {
             menu.addItem(.separator())
             for item in app.items { app.removeItem(item); menu.addItem(item) }
         }
+        startPrefetch(menu)
         menu.popUp(positioning: nil, at: point, in: nil)
+        endPrefetch()
         sources.removeAll()
     }
 
@@ -108,7 +133,7 @@ final class AppMenus: NSObject, NSMenuDelegate {
         }
         let menu = NSMenu()
         menu.autoenablesItems = false
-        fill(menu, from: axMenu)
+        fill(menu, items: MenuReader.items(of: axMenu, depth: 0))
         return menu.items.isEmpty ? nil : menu
     }
 
@@ -145,53 +170,91 @@ final class AppMenus: NSObject, NSMenuDelegate {
         return sub
     }
 
+    // MARK: Prefetch
+
+    /// Starts reading every lazy submenu of `menu` (the app's top-level menus) in the background, in order.
+    private func startPrefetch(_ menu: NSMenu) {
+        endPrefetch()
+        let jobs = menu.items.compactMap { item -> (ObjectIdentifier, AXUIElement)? in
+            guard let sub = item.submenu, let parent = sources[ObjectIdentifier(sub)] else { return nil }
+            return (ObjectIdentifier(sub), parent)
+        }
+        guard !jobs.isEmpty else { return }
+        let p = MenuPrefetch(jobs.map { (MenuPrefetch.Key($0.0), $0.1) })
+        prefetch = p
+        p.start()
+    }
+
+    /// Diagnostics: the dropdown's background reads without opening it.
+    func debugStartPrefetch(_ menu: NSMenu) { startPrefetch(menu) }
+    func debugEndPrefetch() { endPrefetch() }
+
+    private func endPrefetch() {
+        prefetch?.cancel()
+        prefetch = nil
+    }
+
     nonisolated func menuNeedsUpdate(_ menu: NSMenu) {
         MainActor.assumeIsolated {
-            guard let parent = sources[ObjectIdentifier(menu)] else { return }
+            let id = ObjectIdentifier(menu)
+            guard let parent = sources[id], !filled.contains(id) else { return }
+            filled.insert(id)
+            let t0 = CFAbsoluteTimeGetCurrent()
+            defer { trace.built(CFAbsoluteTimeGetCurrent() - t0) }
+            // Prefetched (or being read right now: wait for it rather than ask the app twice); else read it here.
+            var items = prefetch?.take(MenuPrefetch.Key(id))
+            let ready = items != nil
+            if items == nil { items = Self.menuChild(of: parent).map { MenuReader.items(of: $0, depth: 0) } ?? [] }
             menu.removeAllItems()
-            if let axMenu = Self.menuChild(of: parent) { fill(menu, from: axMenu) }
+            fill(menu, items: items ?? [])
             if menu.items.isEmpty {
                 let none = NSMenuItem(title: "(empty)", action: nil, keyEquivalent: "")
                 none.isEnabled = false
                 menu.addItem(none)
             }
+            let ms = (CFAbsoluteTimeGetCurrent() - t0) * 1000
+            if ms > 30, trace.active == false { Log.write("appmenus: '\(menu.title)' took \(Int(ms)) ms (\(ready ? "prefetched" : "read on open"))") }
         }
     }
 
-    private static func menuChild(of el: AXUIElement) -> AXUIElement? {
-        let kids: [AXUIElement] = AX.attr(el, kAXChildrenAttribute) ?? []
-        return kids.first { (AX.attr($0, kAXRoleAttribute) as String?) == kAXMenuRole }
-    }
+    private static func menuChild(of el: AXUIElement) -> AXUIElement? { MenuReader.menuChild(of: el) }
 
-    private func fill(_ menu: NSMenu, from axMenu: AXUIElement) {
-        let kids: [AXUIElement] = AX.attr(axMenu, kAXChildrenAttribute) ?? []
+    private func fill(_ menu: NSMenu, items: [MenuReader.Item]) {
         var lastWasSeparator = true
-        var primary: Shortcut?
-        for el in kids {
-            guard (AX.attr(el, kAXRoleAttribute) as String?) == kAXMenuItemRole else { continue }
-            let title: String = AX.attr(el, kAXTitleAttribute) ?? ""
+        var primary: MenuReader.Item?
+        for el in items {
+            let title = el.title
             // Option alternates ("Restart" next to "Restart...", "Close All" next to "Close Window") are listed by AX
             // like any other item: no flag marks them. AppKit only allows them right after their primary, with the
             // same key plus more modifiers, and they are nearly always the Option variant. Those are left out.
-            let sc = Shortcut(el)
-            if let p = primary, !title.isEmpty, sc.isAlternate(of: p) { continue }
-            if !title.isEmpty { primary = sc }
-            let sub = Self.menuChild(of: el)
-            if title.isEmpty && sub == nil {
+            if let p = primary, !title.isEmpty, el.isAlternate(of: p) { continue }
+            if !title.isEmpty { primary = el }
+            if title.isEmpty && el.submenu == nil {
                 if !lastWasSeparator { menu.addItem(.separator()); lastWasSeparator = true }
                 continue
             }
             let item = NSMenuItem(title: title.isEmpty ? " " : title, action: nil, keyEquivalent: "")
-            item.isEnabled = AX.attr(el, kAXEnabledAttribute) ?? true
-            if let mark: String = AX.attr(el, kAXMenuItemMarkCharAttribute), !mark.isEmpty {
-                item.state = mark == "-" ? .mixed : .on
-            }
-            if sub != nil {
-                item.submenu = lazySubmenu(title: title, for: el)
+            item.isEnabled = el.enabled
+            if !el.mark.isEmpty { item.state = el.mark == "-" ? .mixed : .on }
+            if el.submenu != nil {
+                if let children = el.children {
+                    // Read ahead with its parent: built now, nothing to wait for when it opens.
+                    let m = NSMenu(title: title)
+                    m.autoenablesItems = false
+                    fill(m, items: children)
+                    if m.items.isEmpty {
+                        let none = NSMenuItem(title: "(empty)", action: nil, keyEquivalent: "")
+                        none.isEnabled = false
+                        m.addItem(none)
+                    }
+                    item.submenu = m
+                } else {
+                    item.submenu = lazySubmenu(title: title, for: el.element)
+                }
             } else {
                 item.action = #selector(pick(_:))
                 item.target = self
-                item.representedObject = AXRef(el)
+                item.representedObject = AXRef(el.element)
                 applyShortcut(item, el)
             }
             menu.addItem(item)
@@ -200,28 +263,12 @@ final class AppMenus: NSObject, NSMenuDelegate {
         if let last = menu.items.last, last.isSeparatorItem { menu.removeItem(last) }
     }
 
-    /// An item's key and modifiers as AX reports them (for spotting Option alternates).
-    @MainActor private struct Shortcut {
-        let key: String           // char, glyph or virtual key; "" = no shortcut
-        let mods: Int             // kAXMenuItemModifier bits: 1 Shift, 2 Option, 4 Control (8 No Command dropped)
-        init(_ el: AXUIElement) {
-            let ch: String = AX.attr(el, kAXMenuItemCmdCharAttribute) ?? ""
-            let glyph: Int = AX.attr(el, kAXMenuItemCmdGlyphAttribute) ?? 0
-            let vk: Int = AX.attr(el, kAXMenuItemCmdVirtualKeyAttribute) ?? -1
-            key = !ch.isEmpty ? ch.lowercased() : (glyph != 0 ? "g\(glyph)" : (vk >= 0 ? "v\(vk)" : ""))
-            mods = (AX.attr(el, kAXMenuItemCmdModifiersAttribute) ?? 0) & 7
-        }
-        func isAlternate(of p: Shortcut) -> Bool {
-            guard key == p.key, mods != p.mods, mods & p.mods == p.mods else { return false }
-            return (mods & ~p.mods) & 2 != 0 || p.mods & 2 != 0
-        }
-    }
-
     /// Shows the item's keyboard shortcut (display only: the app still handles the real shortcut).
-    private func applyShortcut(_ item: NSMenuItem, _ el: AXUIElement) {
-        guard let ch: String = AX.attr(el, kAXMenuItemCmdCharAttribute), let c = ch.first,
-              ch.count == 1, !c.isWhitespace, c.unicodeScalars.first.map({ $0.value >= 0x20 }) == true else { return }
-        let mods: Int = AX.attr(el, kAXMenuItemCmdModifiersAttribute) ?? 0
+    private func applyShortcut(_ item: NSMenuItem, _ el: MenuReader.Item) {
+        let ch = el.cmdChar
+        guard let c = ch.first, ch.count == 1, !c.isWhitespace,
+              c.unicodeScalars.first.map({ $0.value >= 0x20 }) == true else { return }
+        let mods = el.mods
         var m: NSEvent.ModifierFlags = []
         if mods & 8 == 0 { m.insert(.command) }          // kAXMenuItemModifierNoCommand
         if mods & 1 != 0 { m.insert(.shift) }
@@ -241,6 +288,239 @@ final class AppMenus: NSObject, NSMenuDelegate {
                 let ok = AX.perform(ref.element, kAXPressAction)
                 Log.write("appmenus: pressed '\(title)' ok=\(ok)")
             }
+        }
+    }
+}
+
+/// One log line per Option-tap dropdown: how long after the Option release it appeared, how often the highlight
+/// moved and the longest gap between moves, time spent building submenus, and main-thread run loop passes that
+/// took over 20 ms while it was open (in the run loop mode the menu tracks in).
+@MainActor
+final class MenuTrace {
+    nonisolated(unsafe) static var tapAt: CFTimeInterval = 0
+    private(set) var active = false
+    private var started: CFTimeInterval = 0
+    private var shownAt: CFTimeInterval?
+    private var tapDelay: CFTimeInterval?
+    private var highlights = 0
+    private var lastHighlight: CFTimeInterval = 0
+    private var maxGap: CFTimeInterval = 0
+    private var opens = 0
+    private var buildTime: CFTimeInterval = 0
+    private var maxBuild: CFTimeInterval = 0
+    private var observer: CFRunLoopObserver?
+    private var observedMode: CFRunLoopMode?
+    fileprivate var passStart: CFTimeInterval = 0
+    fileprivate var slowPasses = 0
+    fileprivate var maxPass: CFTimeInterval = 0
+    fileprivate var passes = 0
+
+    func begin() {
+        active = true
+        started = CACurrentMediaTime()
+        tapDelay = MenuTrace.tapAt > 0 && started - MenuTrace.tapAt < 2 ? started - MenuTrace.tapAt : nil
+        MenuTrace.tapAt = 0
+        shownAt = nil; highlights = 0; lastHighlight = 0; maxGap = 0; opens = 0; buildTime = 0; maxBuild = 0
+        slowPasses = 0; maxPass = 0; passes = 0
+    }
+
+    func opened(_ menu: NSMenu) {
+        guard active else { return }
+        opens += 1
+        if shownAt == nil { shownAt = CACurrentMediaTime() }
+        watchRunLoop()
+    }
+
+    func highlighted() {
+        guard active else { return }
+        let now = CACurrentMediaTime()
+        if lastHighlight > 0 { maxGap = max(maxGap, now - lastHighlight) }
+        lastHighlight = now
+        highlights += 1
+    }
+
+    func built(_ t: CFTimeInterval) {
+        guard active else { return }
+        buildTime += t
+        maxBuild = max(maxBuild, t)
+    }
+
+    /// Times each pass of the main run loop in the common modes (menu tracking runs in NSEventTrackingRunLoopMode).
+    private func watchRunLoop() {
+        guard observer == nil else { return }
+        let mode = CFRunLoopMode.commonModes
+        let o = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.afterWaiting.rawValue
+                                                   | CFRunLoopActivity.beforeWaiting.rawValue, true, 0) { _, activity in
+            MainActor.assumeIsolated {
+                let t = AppMenus.shared.traceRef
+                let now = CACurrentMediaTime()
+                if activity == .afterWaiting { t.passStart = now; return }
+                guard t.passStart > 0 else { return }
+                let d = now - t.passStart
+                t.passes += 1
+                t.maxPass = max(t.maxPass, d)
+                if d > 0.02 { t.slowPasses += 1 }
+            }
+        }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), o, mode)
+        observer = o
+        observedMode = mode
+    }
+
+    func end() {
+        guard active else { return }
+        active = false
+        if let o = observer, let m = observedMode { CFRunLoopRemoveObserver(CFRunLoopGetMain(), o, m) }
+        let mode = observedMode.map { $0.rawValue as String } ?? "?"
+        observer = nil; observedMode = nil
+        let ms = { (t: CFTimeInterval) in Int((t * 1000).rounded()) }
+        let open = CACurrentMediaTime() - started
+        Log.write("appmenus: trace: shown \(tapDelay.map { "\(ms($0)) ms after Option up, " } ?? "")"
+                  + "\(shownAt.map { "\(ms($0 - started)) ms after popUp" } ?? "never"), open \(ms(open)) ms, "
+                  + "\(highlights) highlights (longest gap \(ms(maxGap)) ms), \(opens) menus opened, "
+                  + "building \(ms(buildTime)) ms (max \(ms(maxBuild))), run loop [\(mode)] \(passes) passes, "
+                  + "\(slowPasses) over 20 ms (max \(ms(maxPass)))")
+    }
+}
+
+/// Reads menus through Accessibility on any thread: one AX call per item (`AXUIElementCopyMultipleAttributeValues`)
+/// instead of one per attribute.
+enum MenuReader {
+    struct Item: @unchecked Sendable {        // AXUIElement is a thread-safe CF type
+        let element: AXUIElement
+        let title: String
+        let enabled: Bool
+        let mark: String
+        let cmdChar: String
+        let key: String           // char, glyph or virtual key; "" = no shortcut (for spotting Option alternates)
+        let mods: Int             // kAXMenuItemModifier bits: 1 Shift, 2 Option, 4 Control, 8 No Command
+        let submenu: AXUIElement? // its AXMenu child
+        var children: [Item]?     // the submenu's items, when read ahead
+
+        func isAlternate(of p: Item) -> Bool {
+            let a = mods & 7, b = p.mods & 7
+            guard key == p.key, a != b, a & b == b else { return false }
+            return (a & ~b) & 2 != 0 || b & 2 != 0
+        }
+    }
+
+    private static let names = [kAXRoleAttribute, kAXTitleAttribute, kAXEnabledAttribute, kAXMenuItemMarkCharAttribute,
+                                kAXMenuItemCmdCharAttribute, kAXMenuItemCmdGlyphAttribute,
+                                kAXMenuItemCmdVirtualKeyAttribute, kAXMenuItemCmdModifiersAttribute,
+                                kAXChildrenAttribute] as CFArray
+
+    static func children(_ el: AXUIElement) -> [AXUIElement] {
+        var v: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(el, kAXChildrenAttribute as CFString, &v) == .success else { return [] }
+        return v as? [AXUIElement] ?? []
+    }
+
+    static func role(_ el: AXUIElement) -> String? {
+        var v: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(el, kAXRoleAttribute as CFString, &v) == .success else { return nil }
+        return v as? String
+    }
+
+    static func menuChild(of el: AXUIElement) -> AXUIElement? {
+        children(el).first { role($0) == kAXMenuRole }
+    }
+
+    /// The menu's items; submenus `depth` levels down are read too (0 = this menu only).
+    static func items(of axMenu: AXUIElement, depth: Int, cancelled: () -> Bool = { false }) -> [Item] {
+        var out: [Item] = []
+        for el in children(axMenu) {
+            if cancelled() { return out }
+            var raw: CFArray?
+            guard AXUIElementCopyMultipleAttributeValues(el, names, AXCopyMultipleAttributeOptions(), &raw) == .success,
+                  let v = raw as? [Any], v.count == 9 else { continue }
+            // Missing attributes come back as AXValue errors: the casts below turn them into defaults.
+            guard (v[0] as? String) == kAXMenuItemRole else { continue }
+            let ch = v[4] as? String ?? ""
+            let glyph = (v[5] as? NSNumber)?.intValue ?? 0
+            let vk = (v[6] as? NSNumber)?.intValue ?? -1
+            let key = !ch.isEmpty ? ch.lowercased() : (glyph != 0 ? "g\(glyph)" : (vk >= 0 ? "v\(vk)" : ""))
+            let kids = v[8] as? [AXUIElement] ?? []
+            let sub = kids.first { role($0) == kAXMenuRole }
+            var item = Item(element: el, title: v[1] as? String ?? "", enabled: (v[2] as? NSNumber)?.boolValue ?? true,
+                            mark: v[3] as? String ?? "", cmdChar: ch, key: key,
+                            mods: (v[7] as? NSNumber)?.intValue ?? 0, submenu: sub, children: nil)
+            if let sub, depth > 0 { item.children = items(of: sub, depth: depth - 1, cancelled: cancelled) }
+            out.append(item)
+        }
+        return out
+    }
+}
+
+/// Reads an open dropdown's menus on a background thread, in order. A menu the pointer reaches first is read on
+/// the spot by the main thread instead (claimed, so the app isn't asked twice); one being read is waited for.
+final class MenuPrefetch: @unchecked Sendable {
+    struct Key: Hashable, @unchecked Sendable {
+        let raw: ObjectIdentifier
+        init(_ id: ObjectIdentifier) { raw = id }
+    }
+    private enum Slot { case pending(AXUIElement), reading, done([MenuReader.Item]) }
+    private let cond = NSCondition()
+    private var slots: [Key: Slot] = [:]
+    private let order: [Key]
+    private var cancelled = false
+
+    init(_ jobs: [(Key, AXUIElement)]) {
+        order = jobs.map(\.0)
+        for (k, el) in jobs { slots[k] = .pending(el) }
+    }
+
+    func start() {
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            for k in order {
+                guard let el = claim(k) else { continue }
+                let items = MenuReader.menuChild(of: el).map {
+                    MenuReader.items(of: $0, depth: 1, cancelled: { [self] in isCancelled })
+                } ?? []
+                finish(k, items)
+                if isCancelled { return }
+            }
+        }
+    }
+
+    func cancel() {
+        cond.lock(); cancelled = true; cond.broadcast(); cond.unlock()
+    }
+
+    private var isCancelled: Bool { cond.lock(); defer { cond.unlock() }; return cancelled }
+
+    private func claim(_ k: Key) -> AXUIElement? {
+        cond.lock(); defer { cond.unlock() }
+        guard !cancelled, case .pending(let el) = slots[k] else { return nil }
+        slots[k] = .reading
+        return el
+    }
+
+    private func finish(_ k: Key, _ items: [MenuReader.Item]) {
+        cond.lock(); slots[k] = .done(items); cond.broadcast(); cond.unlock()
+    }
+
+    /// The menu's items for the main thread: ready ones at once, one being read after it finishes (at most 0.5 s),
+    /// one not started yet read right here. nil if this dropdown doesn't know the menu.
+    func take(_ k: Key) -> [MenuReader.Item]? {
+        cond.lock()
+        let deadline = Date().addingTimeInterval(0.5)
+        while case .reading = slots[k], !cancelled {
+            if !cond.wait(until: deadline) { break }
+        }
+        switch slots[k] {
+        case .done(let items)?:
+            cond.unlock()
+            return items
+        case .pending(let el)?:
+            slots[k] = .reading
+            cond.unlock()
+            // Read on the spot: this menu only (its submenus are read when they open).
+            let items = MenuReader.menuChild(of: el).map { MenuReader.items(of: $0, depth: 0) } ?? []
+            finish(k, items)
+            return items
+        default:
+            cond.unlock()
+            return nil
         }
     }
 }

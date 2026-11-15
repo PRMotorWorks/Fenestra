@@ -9,6 +9,7 @@ import ScreenCaptureKit
 ///                            logs the AX result and every window that appears, whoever owns it
 ///   object "menus <App>"     times reading that app's whole menu bar tree
 ///   object "build <App>"     builds the Phase 6 dropdown for that app (nothing opens) and logs it
+///   object "prefetch <App>"  same with the background reads running first: time to open each menu
 /// Results go to the app log (prefix "menubartest:") and ~/Library/Logs/Fenestra-dragtest/extra-*.png.
 @MainActor
 enum MenuBarDiagnostics {
@@ -24,6 +25,7 @@ enum MenuBarDiagnostics {
                     case "tap": await tap(parts.count > 1 ? parts[1] : "")
                     case "menus": menus(parts.count > 1 ? parts[1] : "Finder")
                     case "build": build(parts.count > 1 ? parts[1] : "Finder")
+                    case "prefetch": prefetch(parts.count > 1 ? parts[1] : "Finder")
                     case "attrs": attrs(parts.count > 1 ? parts[1] : "Finder")
                     default: await dump()
                     }
@@ -224,6 +226,27 @@ enum MenuBarDiagnostics {
             let desc = sub.items.map { $0.isSeparatorItem ? "---" :
                 "\($0.title)\($0.isEnabled ? "" : " (off)")\($0.keyEquivalent.isEmpty ? "" : " [\($0.keyEquivalent)]")\($0.submenu != nil ? " >" : "")" }
             log("build: \(menu.items[i].title) (\(Int(Date().timeIntervalSince(t) * 1000)) ms): " + desc.joined(separator: " | "))
+        }
+    }
+
+    /// Like build, but with the dropdown's background reads running for 0.4 s first (as when the pointer moves
+    /// to a menu after the dropdown opens): logs how long each top-level menu then takes to open.
+    static func prefetch(_ name: String) {
+        guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == name }),
+              let menu = AppMenus.shared.appMenu(pid: app.processIdentifier) else { log("prefetch: \(name) not running or no menu"); return }
+        AppMenus.shared.debugStartPrefetch(menu)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            MainActor.assumeIsolated {
+                var parts: [String] = []
+                for item in menu.items {
+                    guard let sub = item.submenu else { continue }
+                    let t = CFAbsoluteTimeGetCurrent()
+                    AppMenus.shared.menuNeedsUpdate(sub)
+                    parts.append("\(item.title) \(String(format: "%.1f", (CFAbsoluteTimeGetCurrent() - t) * 1000))")
+                }
+                AppMenus.shared.debugEndPrefetch()
+                log("prefetch: \(name) open times in ms: " + parts.joined(separator: ", "))
+            }
         }
     }
 

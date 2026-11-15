@@ -219,7 +219,7 @@ final class HotKeys: @unchecked Sendable {
             let fire = s.optionTap && s.optionDownAt != 0 && !s.optionTainted && !s.switcher
                 && e.timestamp &- s.optionDownAt < 600_000_000
             state.withLock { $0.optionDownAt = 0 }
-            if fire { post(.optionTap) }
+            if fire { MenuTrace.tapAt = CACurrentMediaTime(); post(.optionTap) }
         } else {
             state.withLock { $0.optionTainted = true }              // Option plus another modifier
         }
