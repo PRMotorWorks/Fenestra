@@ -113,6 +113,9 @@ final class AppSettings: ObservableObject {
     @Published var showSeconds: Bool { didSet { d.set(showSeconds, forKey: "showSeconds"); SystemStatus.shared.scheduleClock() } }
     @Published var showBell: Bool { didSet { d.set(showBell, forKey: "showBell") } }
     @Published var showBatteryPercent: Bool { didSet { d.set(showBatteryPercent, forKey: "showBatteryPercent") } }
+    @Published var showMacNotificationCenter: Bool {
+        didSet { d.set(showMacNotificationCenter, forKey: "showMacNotificationCenter") }
+    }
     // Taskbar behaviors
     @Published var alignment: TaskbarAlignment { didSet { d.set(alignment.rawValue, forKey: "alignment") } }
     @Published var autoHide: Bool { didSet { d.set(autoHide, forKey: "autoHide") } }
@@ -219,6 +222,7 @@ final class AppSettings: ObservableObject {
         showSeconds = bool("showSeconds", false)
         showBell = bool("showBell", true)
         showBatteryPercent = bool("showBatteryPercent", true)
+        showMacNotificationCenter = bool("showMacNotificationCenter", false)
         alignment = TaskbarAlignment(rawValue: d.string(forKey: "alignment") ?? "") ?? .center
         autoHide = bool("autoHide", false)
         showBadges = bool("showBadges", true)

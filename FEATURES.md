@@ -84,7 +84,7 @@ Back to the [README](README.md) · [Install guide](INSTALL.md)
 ## Calendar and notifications
 
 - Click the clock for **today's date and a month calendar**. Browse months with the arrows.
-- **Notifications** you received while Fenestra runs, plus a button to open the macOS Notification Center.
+- **Notifications** you received while Fenestra runs. The list grows up to almost the full screen height, as on Windows 11. A link to open the macOS Notification Center can be switched on in Settings > System tray (off by default).
 
 ## Title bar buttons
 

@@ -3,8 +3,24 @@ import SwiftUI
 /// Clock/bell flyout: Windows 11 notification center (top) and calendar (bottom).
 struct CalendarFlyout: View {
     @ObservedObject private var store = NotificationStore.shared
+    @ObservedObject private var settings = AppSettings.shared
     @Environment(\.colorScheme) private var scheme
     @State private var month = Calendar.current.dateInterval(of: .month, for: Date())!.start
+    // Measured heights, so the list can grow up to almost the whole screen, as on Windows 11.
+    @State private var cardsHeight: CGFloat = 0
+    @State private var sectionHeight: CGFloat = 0
+    @State private var calendarHeight: CGFloat = 330
+    @State private var appliedListHeight: CGFloat = 0
+
+    /// The list's height: its content, up to what leaves the rest of the flyout on screen (the flyout itself
+    /// may be at most the display height minus the taskbar and 24 pt of margins).
+    private var listHeight: CGFloat {
+        let screen = FlyoutManager.shared.placementScreen ?? TaskbarController.shared.screen ?? NSScreen.screens[0]
+        let flyoutMax = screen.frame.height - Theme.taskbarHeight - 24
+        let chrome = max(0, sectionHeight - appliedListHeight)   // header, link and padding around the list
+        let room = flyoutMax - chrome - calendarHeight - 1         // 1: the divider
+        return min(cardsHeight, max(78, room))
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -31,16 +47,22 @@ struct CalendarFlyout: View {
                         VStack(spacing: 6) {
                             ForEach(store.items) { NotificationCard(item: $0) }
                         }
+                        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { cardsHeight = $0 }
                     }
-                    .frame(height: min(CGFloat(store.items.count) * 78, 320))
+                    .frame(height: listHeight)
+                    .onChange(of: listHeight, initial: true) { _, h in appliedListHeight = h }
+                    .onDisappear { appliedListHeight = 0 }
                 }
-                Button("Open macOS Notification Center") {
-                    FlyoutManager.shared.close(animated: false)
-                    SystemActions.openNotificationCenter()
+                if settings.showMacNotificationCenter {
+                    Button("Open macOS Notification Center") {
+                        FlyoutManager.shared.close(animated: false)
+                        SystemActions.openNotificationCenter()
+                    }
+                    .buttonStyle(.link).font(Theme.font(12))
                 }
-                .buttonStyle(.link).font(Theme.font(12))
             }
             .padding(16)
+            .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { sectionHeight = $0 }
 
             Rectangle().fill(Theme.border(scheme)).frame(height: 1)
 
@@ -52,6 +74,7 @@ struct CalendarFlyout: View {
                 Rectangle().fill(Theme.border(scheme)).frame(height: 1)
                 MonthGrid(month: $month).padding(12)
             }
+            .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { calendarHeight = $0 }
         }
         .frame(width: 340)
     }

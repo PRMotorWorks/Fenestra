@@ -232,7 +232,7 @@ directly below the main one, so the Dock can't live under the taskbar and the se
 | 13h | Taskbar settings > Keyboard layout (ENG US): Automatic | input indicator always shown | hidden while the Keyboard layout tile is in Quick Settings; Always show / Never show override it |
 | 14 | Brightness slider | changes brightness | built-in screen; external only if DDC works on that monitor |
 | 15 | Battery saver tile | Energy saver on | asks for admin once, then toggles Low Power Mode |
-| 16 | Click the clock | calendar + notifications | same; "Open macOS Notification Center" works |
+| 16 | Click the clock | calendar + notifications | same; with Settings > System tray > "Open macOS Notification Center" on, that link works (off by default) |
 | 17 | Click `ENG/US` | layout list | same; switches layout |
 | 18 | Double-click a window's title bar or use Window > Fill | maximized window stops at taskbar | window gets shortened to stop at the taskbar |
 | 19 | Right-click empty taskbar | Task Manager, Taskbar settings | same (Activity Monitor) |

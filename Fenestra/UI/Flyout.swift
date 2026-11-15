@@ -27,7 +27,7 @@ final class FlyoutManager {
     /// (Snap Layouts under a window's maximize button), on the anchor's display.
     enum Placement { case aboveTaskbar, below }
     private var placement: Placement = .aboveTaskbar
-    private var placementScreen: NSScreen?
+    private(set) var placementScreen: NSScreen?
 
     func isOpen(_ id: String) -> Bool { currentID == id }
     /// Screen frame of the open flyout, if any.
