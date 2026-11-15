@@ -7,8 +7,10 @@
 #     and notarized + stapled when a notarytool profile named "fenestra-notary" exists
 #     (create it once: xcrun notarytool store-credentials fenestra-notary). The disk image then opens on any Mac
 #     with no warning.
-#   - Otherwise the "Apple Development" certificate: the other Mac shows a warning on first open, which
-#     System Settings > Privacy & Security > Open Anyway clears (INSTALL.md explains it).
+#   - Otherwise ad-hoc (no certificate, no identity in the signature): the other Mac shows a warning on first
+#     open, which System Settings > Privacy & Security > Open Anyway clears (INSTALL.md explains it), and macOS
+#     asks for the permissions again after each update. The "Apple Development" certificate is never used here:
+#     it is for local builds and puts your Apple ID email in the signature.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -33,11 +35,15 @@ if [ -n "$DEVID" ]; then
   SIGN="$DEVID"; KIND="Developer ID"
   TIMESTAMP=(--timestamp)
 else
-  SIGN="$(identity 'Apple Development')"; KIND="Apple Development (not notarizable)"
+  SIGN="-"; KIND="ad-hoc, not notarizable"
   TIMESTAMP=(--timestamp=none)
-  [ -n "$SIGN" ] || { echo "No signing certificate found."; exit 1; }
 fi
-echo "Signing with $SIGN"
+echo "Signing: $KIND"
+# Drop Xcode's local signature entirely (re-signing over it leaves its old bytes, Apple ID email included, in the
+# signature padding), then strip debug symbols: the symbol table records build paths (your home folder). Crash
+# symbolication uses the dSYM in build/Release, which stays local.
+codesign --remove-signature "$STAGE/Fenestra.app"
+strip -S -x "$STAGE/Fenestra.app/Contents/MacOS/Fenestra"
 # Hardened runtime, release entitlements (no debugger attach, Apple events allowed).
 codesign --force --options runtime "${TIMESTAMP[@]}" --entitlements "$ENTITLEMENTS" --sign "$SIGN" "$STAGE/Fenestra.app"
 codesign --verify --strict "$STAGE/Fenestra.app"

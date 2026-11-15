@@ -61,7 +61,8 @@ including each change Fenestra makes to macOS (Settings > Fenestra > macOS chang
 ## Updating
 
 Right-click the taskbar > **Quit Fenestra and restore the Dock**. Drag the new Fenestra from its disk image onto
-Applications and choose **Replace**, then open it. Your settings and permissions stay.
+Applications and choose **Replace**, then open it. Your settings stay. macOS may ask you to grant the permissions
+again, and to click **Open Anyway** once more (step 2): this build isn't notarized yet.
 
 ## Uninstalling
 

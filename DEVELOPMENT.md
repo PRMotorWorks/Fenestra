@@ -54,8 +54,10 @@ Copy the disk image to the other Mac and follow [INSTALL.md](INSTALL.md) (also i
 its scripts (what `install.sh` does), then restarts under the watchdog. Opened from the disk image or Downloads it
 asks to be moved to Applications. Settings > Fenestra > Uninstall… runs `restore.sh --uninstall`.
 
-Signing: `package.sh` signs with hardened runtime and `Config/Fenestra-dist.entitlements` (Apple events). With only
-the Apple Development certificate, the other Mac needs System Settings > Privacy & Security > **Open Anyway** once.
+Signing: `package.sh` signs with hardened runtime and `Config/Fenestra-dist.entitlements` (Apple events). Without a
+Developer ID it signs ad-hoc (no identity in the signature; the Apple Development certificate would put your Apple ID
+email in it): the other Mac needs System Settings > Privacy & Security > **Open Anyway** once, and permissions again
+after each update.
 With a **Developer ID Application** certificate (paid Apple Developer Program) it signs with that instead, and
 notarizes and staples when a notarytool profile exists (`xcrun notarytool store-credentials fenestra-notary`):
 the image then opens with no warning on any Mac.
