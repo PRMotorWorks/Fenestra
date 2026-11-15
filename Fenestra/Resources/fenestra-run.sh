@@ -29,7 +29,10 @@ echo "starting $(date +%s)" > "$STATE"
 # (not to this script). -W waits until the app exits.
 /usr/bin/open -W -a "$APP" --args --from-agent
 
-read -r status _ < "$STATE" 2>/dev/null || status="unknown"
+# `read` fails on a last line without a newline but still fills the variable: keep what it read. (Without this, a
+# normal quit read as "unknown" and counted as a crash: user report 2026-11-15.)
+status=""
+{ read -r status _ < "$STATE" 2>/dev/null || [ -n "$status" ]; } || status="unknown"
 case "$status" in
   stopped)
     "$SUPPORT/restore.sh" --soft

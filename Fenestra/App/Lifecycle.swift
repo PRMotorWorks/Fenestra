@@ -51,7 +51,7 @@ enum Lifecycle {
     }
 
     static func writeState(_ s: String) {
-        try? s.write(to: stateFile, atomically: true, encoding: .utf8)
+        try? (s + "\n").write(to: stateFile, atomically: true, encoding: .utf8)
     }
 
     static func markRunning() {
