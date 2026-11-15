@@ -32,6 +32,8 @@ Mac app, it idles at 0% CPU, and quitting it puts your Mac back exactly how it w
 
 ## Features
 
+The highlights are below. **[See every feature →](FEATURES.md)**
+
 ### Taskbar and Start
 
 <img src="docs/images/start-menu.jpg" alt="Start menu with pinned apps, recommended files and all apps" width="100%">
@@ -101,6 +103,9 @@ minimize; plug it back in and they return to where they were.
 
 <br clear="right">
 
+**There's a lot more:** the menu button and Option tap for app menus, Option+Space window menu, snap groups, quick
+snap, End task, keyboard snapping, and a switch for nearly everything. **[Full feature list →](FEATURES.md)**
+
 ## Keyboard shortcuts
 
 | On Windows | On a Mac with Fenestra | Does |
@@ -159,7 +164,7 @@ hides Wi-Fi network names without it.
 <details>
 <summary><b>Will it slow my Mac down?</b></summary>
 
-It idles at 0% CPU and uses about 40 MB of memory. It's a single native AppKit and SwiftUI app, not a web wrapper.
+It idles at 0% CPU and uses about 60 MB of memory. It's a single native AppKit and SwiftUI app, not a web wrapper.
 </details>
 
 <details>
