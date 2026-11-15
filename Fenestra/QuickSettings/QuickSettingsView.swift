@@ -46,29 +46,19 @@ struct QuickSettingsView: View {
 
     private var mainPage: some View {
         VStack(spacing: 18) {
-            LazyVGrid(columns: Array(repeating: GridItem(.fixed(104), spacing: 12), count: 3), spacing: 14) {
-                ForEach(settings.tiles) { k in
-                    tile(k)
-                        .disabled(m.editing)
-                        .overlay(alignment: .topTrailing) {
-                            if m.editing {
-                                // Windows: the unpin badge on each tile while editing.
-                                Image(systemName: "pin.slash").font(.system(size: 9, weight: .semibold))
-                                    .frame(width: 22, height: 22)
-                                    .background(Circle().fill(Theme.control(scheme)))
-                                    .overlay(Circle().strokeBorder(Theme.border(scheme), lineWidth: 1))
-                                    .contentShape(Circle())
-                                    .onTapGesture { m.unpin(k) }
-                                    .help("Unpin")
-                                    .offset(x: 6, y: -6)
-                            }
-                        }
-                        .opacity(dragging == k ? 0.4 : 1)
-                        .modifier(TileDrag(kind: k, enabled: m.editing, m: m, dragging: $dragging))
+            // The Wi-Fi chevron opens the network list right under the Wi-Fi tile's row.
+            let tiles = settings.tiles
+            let split = m.wifiListOpen ? tiles.firstIndex(of: .wifi).map { min(($0 / 3 + 1) * 3, tiles.count) } : nil
+            VStack(spacing: 14) {
+                tileGrid(Array(tiles.prefix(split ?? tiles.count)))
+                if let split {
+                    WiFiList(m: m, maxHeight: 220)
+                        .padding(8)
+                        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .strokeBorder(Theme.border(scheme), lineWidth: 1))
+                    if split < tiles.count { tileGrid(Array(tiles[split...])) }
                 }
             }
-            // A drop between tiles still ends the drag (otherwise the dragged tile stays dimmed).
-            .onDrop(of: [.text], isTargeted: nil) { _ in dragging = nil; return true }
             .onChange(of: m.editing) { dragging = nil }
             VStack(spacing: 14) {
                 if Brightness.shared.isAvailable {
@@ -91,11 +81,39 @@ struct QuickSettingsView: View {
         .padding(20)
     }
 
+    private func tileGrid(_ kinds: [QSTileKind]) -> some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.fixed(104), spacing: 12), count: 3), spacing: 14) {
+            ForEach(kinds) { k in
+                tile(k)
+                    .disabled(m.editing)
+                    .overlay(alignment: .topTrailing) {
+                        if m.editing {
+                            // Windows: the unpin badge on each tile while editing.
+                            Image(systemName: "pin.slash").font(.system(size: 9, weight: .semibold))
+                                .frame(width: 22, height: 22)
+                                .background(Circle().fill(Theme.control(scheme)))
+                                .overlay(Circle().strokeBorder(Theme.border(scheme), lineWidth: 1))
+                                .contentShape(Circle())
+                                .onTapGesture { m.unpin(k) }
+                                .help("Unpin")
+                                .offset(x: 6, y: -6)
+                        }
+                    }
+                    .opacity(dragging == k ? 0.4 : 1)
+                    .modifier(TileDrag(kind: k, enabled: m.editing, m: m, dragging: $dragging))
+            }
+        }
+        // A drop between tiles still ends the drag (otherwise the dragged tile stays dimmed).
+        .onDrop(of: [.text], isTargeted: nil) { _ in dragging = nil; return true }
+    }
+
     @ViewBuilder private func tile(_ k: QSTileKind) -> some View {
         switch k {
         case .wifi:
             QSTile(title: s.wifiOn ? (s.ssid ?? "Wi-Fi") : "Wi-Fi", symbol: m.wifiOn ? "wifi" : "wifi.slash",
-                   on: m.wifiOn, action: m.toggleWiFi, more: m.openWiFiList)
+                   on: m.wifiOn, action: { m.toggleWiFi(); if m.wifiListOpen { m.scan() } },
+                   more: m.toggleWiFiList, moreSymbol: "chevron.down", moreOpen: m.wifiListOpen,
+                   moreHelp: m.wifiListOpen ? "Hide Wi-Fi networks" : "Show Wi-Fi networks")
         case .bluetooth:
             QSTile(title: k.title, symbol: k.symbol, on: m.bluetoothOn, action: m.toggleBluetooth, more: m.openBluetoothList)
         case .airplane: QSTile(title: k.title, symbol: k.symbol, on: m.airplane, action: m.toggleAirplane)
@@ -127,13 +145,12 @@ struct QuickSettingsView: View {
 
     private var footer: some View {
         HStack(spacing: 8) {
-            if s.battery.present {
-                Image(systemName: Battery.symbol(s.battery))
+            if Battery.isPresent && s.battery.present {
+                BatteryIcon(state: s.battery, size: 15)
                 Text("\(s.battery.percent)%")
-                if let mins = s.battery.minutesToEmpty, !s.battery.onAC {
-                    Text("· \(mins / 60) h \(mins % 60) min").foregroundStyle(Theme.secondaryText(scheme))
-                } else if s.battery.charging {
-                    Text("· Charging").foregroundStyle(Theme.secondaryText(scheme))
+                if let detail = Battery.detail(s.battery) {
+                    Text("· " + detail.prefix(1).uppercased() + detail.dropFirst())
+                        .foregroundStyle(Theme.secondaryText(scheme)).lineLimit(1)
                 }
             }
             Spacer()
@@ -164,6 +181,10 @@ struct QSTile: View {
     let on: Bool
     let action: () -> Void
     var more: (() -> Void)? = nil
+    var moreSymbol = "chevron.right"
+    /// A down chevron that opens something in place turns to point up while it's open, and back down on closing.
+    var moreOpen = false
+    var moreHelp: String? = nil
     @Environment(\.colorScheme) private var scheme
     @State private var hoverMain = false
     @State private var hoverMore = false
@@ -184,12 +205,15 @@ struct QSTile: View {
                     .onTapGesture(perform: action)
                 if let more {
                     Rectangle().fill(on ? Color.black.opacity(0.15) : Theme.border(scheme)).frame(width: 1)
-                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
+                    Image(systemName: moreSymbol).font(.system(size: 10, weight: .semibold))
+                        .rotationEffect(.degrees(moreOpen ? 180 : 0))
+                        .animation(.spring(duration: 0.35, bounce: 0.3), value: moreOpen)
                         .frame(width: 32).frame(maxHeight: .infinity)
                         .background(bg(hoverMore))
                         .contentShape(Rectangle())
                         .onHover { hoverMore = $0 }
                         .onTapGesture(perform: more)
+                        .help(moreHelp ?? "")
                 }
             }
             .foregroundStyle(fg)
@@ -281,6 +305,20 @@ struct WiFiPage: View {
                 Toggle("", isOn: Binding(get: { m.wifiOn }, set: { _ in m.toggleWiFi(); m.scan() }))
                     .toggleStyle(.switch).labelsHidden().tint(Theme.accent)
             }
+            WiFiList(m: m, maxHeight: 300)
+        }
+        .padding(16)
+    }
+}
+
+/// The network list, used on the Wi-Fi page and opened in place by the Wi-Fi tile's chevron.
+struct WiFiList: View {
+    @ObservedObject var m: QuickSettingsModel
+    var maxHeight: CGFloat = 300
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
             if Permissions.shared.location != .authorizedAlways {
                 Button("Allow Location to see network names…") {
                     FlyoutManager.shared.close()
@@ -296,7 +334,8 @@ struct WiFiPage: View {
                     ForEach(m.networks, id: \.self) { n in WiFiRow(m: m, n: n) }
                 }
             }
-            .frame(height: min(300, max(56, CGFloat(m.networks.count) * 38 + (m.expandedSSID == nil ? 0 : 40)
+            .frame(height: min(maxHeight, max(56, m.networks.reduce(0) { $0 + ($1.isHotspot ? 52 : 38) }
+                                                + (m.expandedSSID == nil ? 0 : 40)
                                                 + (m.joiningSSID == nil ? 0 : 40))))
             .overlay(alignment: .top) {
                 // Refreshing a list that is already shown: a thin bar, so nothing moves (Windows: dotted bar).
@@ -315,7 +354,6 @@ struct WiFiPage: View {
             }
             QSLink(title: "More Wi-Fi settings", pane: "com.apple.wifi-settings-extension")
         }
-        .padding(16)
     }
 }
 
@@ -335,12 +373,17 @@ struct WiFiRow: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
                 RoundedRectangle(cornerRadius: 1.5).fill(current ? Theme.accent : .clear).frame(width: 3, height: 16)
-                Image(systemName: "wifi").opacity(0.4 + Double(n.bars) * 0.2)
+                Image(systemName: n.isHotspot ? "personalhotspot" : "wifi")
+                    .opacity(n.isHotspot ? 1 : 0.4 + Double(n.bars) * 0.2)
+                    .frame(width: 18)
                     .overlay(alignment: .bottomTrailing) {
                         if n.isSecured { Image(systemName: "lock.fill").font(.system(size: 7)).offset(x: 4, y: 2) }
                     }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(n.ssid ?? "Hidden network").lineLimit(1)
+                    if n.isHotspot && !(current || open) {
+                        Text("Mobile hotspot").font(Theme.font(11)).foregroundStyle(Theme.secondaryText(scheme))
+                    }
                     if current || open {
                         Text(status(current: current)).font(Theme.font(11)).foregroundStyle(Theme.secondaryText(scheme))
                     }
@@ -376,6 +419,7 @@ struct WiFiRow: View {
     }
 
     private func status(current: Bool) -> String {
+        if n.isHotspot { return current ? "Mobile hotspot, connected" : "Mobile hotspot" }
         if current { return n.isSecured ? "Connected, secured" : "Connected" }
         if m.connectingSSID == n.ssid { return "Connecting" }
         return n.isSecured ? "Secured" : "Open"

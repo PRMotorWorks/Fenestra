@@ -51,22 +51,48 @@ struct TrayView: View {
                 .help(cur.name)
             }
 
+            // One button, as on Windows 11, but each icon has its own tooltip, and scrolling over the speaker
+            // changes the volume.
             TaskbarButtonChrome(width: nil, onLeft: { rect in
+                TrayTip.shared.hide()
                 FlyoutManager.shared.toggle(id: "quick", anchor: rect) { QuickSettingsView() }
+            }, onHoverChange: { inside, _ in
+                if !inside { TrayTip.shared.hide() }
+            }, onMove: { point, rect in
+                let k = trayIcon(at: point.x)
+                TrayTip.shared.hover(k, iconX: rect.minX + (k.flatMap { iconFrames[$0]?.midX } ?? point.x), button: rect)
+            }, onScroll: { event, point, rect in
+                guard trayIcon(at: point.x) == .volume else { return }
+                let steps = TrayTip.shared.volumeScroll.steps(event)
+                guard steps != 0 else { return }
+                s.stepVolume(steps)
+                TrayTip.shared.hover(.volume, iconX: rect.minX + (iconFrames[.volume]?.midX ?? point.x), button: rect, now: true)
             }) {
                 HStack(spacing: 10) {
                     Image(systemName: wifiSymbol).font(.system(size: 14))
+                        .modifier(TrayIconFrame(kind: .wifi, frames: $iconFrames))
                     Image(systemName: volumeSymbol).font(.system(size: 14))
-                    if s.battery.present {
+                        .modifier(TrayIconFrame(kind: .volume, frames: $iconFrames))
+                    if Battery.isPresent && s.battery.present {
                         HStack(spacing: 3) {
-                            Image(systemName: Battery.symbol(s.battery)).font(.system(size: 15))
+                            BatteryIcon(state: s.battery, size: 15)
                             if settings.showBatteryPercent { Text("\(s.battery.percent)%").font(Theme.font(12)) }
                         }
+                        .modifier(TrayIconFrame(kind: .battery, frames: $iconFrames))
                     }
                 }
                 .padding(.horizontal, 10)
+                .coordinateSpace(.named(TrayIconFrame.space))
             }
-            .help(quickTooltip)
+    }
+
+    @State private var iconFrames: [TrayTip.Kind: CGRect] = [:]
+
+    /// The Quick Settings icon nearest the pointer (x from the button's left edge).
+    private func trayIcon(at x: CGFloat) -> TrayTip.Kind? {
+        var shown: [TrayTip.Kind] = [.wifi, .volume]
+        if Battery.isPresent && s.battery.present { shown.append(.battery) }
+        return shown.compactMap { k in iconFrames[k].map { (k, abs($0.midX - x)) } }.min { $0.1 < $1.1 }?.0
     }
 
     @ViewBuilder private var clockAndBell: some View {
@@ -113,16 +139,35 @@ struct TrayView: View {
         if s.volume < 0.67 { return "speaker.wave.2" }
         return "speaker.wave.3"
     }
-    private var quickTooltip: String {
-        var parts: [String] = []
-        if s.wifiOn { parts.append(s.ssid.map { "\($0): Internet access" } ?? "Wi-Fi") }
-        parts.append("Volume: \(Int(s.volume * 100))%")
-        if s.battery.present {
-            var b = "Battery: \(s.battery.percent)%"
-            if s.battery.charging { b += ", charging" } else if s.battery.onAC { b += ", plugged in" }
-            parts.append(b)
-        }
-        return parts.joined(separator: "\n")
+}
+
+/// Remembers where a Quick Settings icon sits inside the tray button, for its tooltip and the volume scroll.
+struct TrayIconFrame: ViewModifier {
+    static let space = "trayIcons"
+    let kind: TrayTip.Kind
+    @Binding var frames: [TrayTip.Kind: CGRect]
+    func body(content: Content) -> some View {
+        content.onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named(Self.space)) }) { frames[kind] = $0 }
+    }
+}
+
+/// Battery level with a bolt while charging or a plug while on the adapter without charging (macOS's battery menu
+/// uses the same two marks). Shared by the taskbar and the Quick Settings footer.
+struct BatteryIcon: View {
+    let state: Battery.State
+    var size: CGFloat = 15
+    var body: some View {
+        Image(systemName: Battery.symbol(state)).font(.system(size: size))
+            .overlay(alignment: .center) {
+                if let badge = Battery.badge(state) {
+                    // Knocked out of the level fill (as the system's own bolt battery) so it reads at any level.
+                    let glyph = Image(systemName: badge)
+                        .font(.system(size: size * (badge == "bolt.fill" ? 0.6 : 0.5), weight: .bold))
+                        .offset(x: -size * 0.06)
+                    glyph.background(glyph.scaleEffect(1.35).blendMode(.destinationOut))
+                }
+            }
+            .compositingGroup()
     }
 }
 

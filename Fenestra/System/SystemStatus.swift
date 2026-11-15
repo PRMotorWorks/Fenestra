@@ -36,8 +36,12 @@ final class SystemStatus: ObservableObject {
         Audio.observe { DispatchQueue.main.async { SystemStatus.shared.refreshAudio() } }
         refreshAudio()
 
-        Battery.observe { SystemStatus.shared.battery = Battery.read() }
-        battery = Battery.read()
+        if Battery.isPresent {
+            Battery.observe { SystemStatus.shared.battery = Battery.read() }
+            battery = Battery.read()
+        } else {
+            Log.write("battery: no internal battery, battery icon and listener off")
+        }
 
         let dnc = DistributedNotificationCenter.default()
         for name in [kTISNotifySelectedKeyboardInputSourceChanged!, kTISNotifyEnabledKeyboardInputSourcesChanged!] {
@@ -54,7 +58,8 @@ final class SystemStatus: ObservableObject {
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated {
                 let s = SystemStatus.shared
-                s.scheduleClock(); s.refreshWiFi(); s.battery = Battery.read()
+                s.scheduleClock(); s.refreshWiFi()
+                if Battery.isPresent { s.battery = Battery.read() }
             }
         }
     }
@@ -71,6 +76,16 @@ final class SystemStatus: ObservableObject {
     func refreshAudio() {
         volume = Audio.volume()
         muted = Audio.isMuted()
+    }
+
+    /// Scroll over the tray's speaker: up or down in 5% steps (Windows 11), on the 5% grid. Raising it unmutes.
+    func stepVolume(_ steps: Int) {
+        guard steps != 0, Audio.canSetVolume() else { return }
+        let grid = (Audio.volume() * 20).rounded()
+        let target = min(max(grid + Float(steps), 0), 20) / 20
+        if steps < 0 && muted { return }
+        Audio.setVolume(target)
+        refreshAudio()
     }
 
     /// Wakes once per minute, exactly on the minute (once per second with "Show seconds").

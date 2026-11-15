@@ -132,6 +132,28 @@ final class WiFi: NSObject, CWEventDelegate, @unchecked Sendable {
 
 extension CWNetwork {
     var isSecured: Bool { !supportsSecurity(.none) }
+
+    /// A phone sharing its connection (iPhone Personal Hotspot, Android hotspot). There's no public flag for it,
+    /// so this goes by the names phones give their hotspots. macOS's Instant Hotspot list (phones found over
+    /// Bluetooth before they broadcast) is private; a hotspot shows here once the phone broadcasts it.
+    var isHotspot: Bool {
+        let n = (ssid ?? "").lowercased()
+        return ["iphone", "ipad", "androidap", "android", "galaxy", "pixel", "hotspot", "redmi", "oneplus"]
+            .contains { n.contains($0) }
+    }
+
+    /// Beacon carries Apple's vendor element (OUI 00:17:F2). Only logged for now, to learn whether it marks
+    /// iPhone hotspots reliably enough to use instead of the name.
+    var hasAppleIE: Bool {
+        let b = [UInt8](informationElementData ?? Data())
+        var i = 0
+        while i + 1 < b.count {
+            let id = b[i], len = Int(b[i + 1])
+            if id == 221, len >= 3, i + 4 < b.count, b[i + 2] == 0x00, b[i + 3] == 0x17, b[i + 4] == 0xF2 { return true }
+            i += 2 + len
+        }
+        return false
+    }
     var bars: Int {
         if rssiValue >= -55 { return 3 }
         if rssiValue >= -67 { return 2 }

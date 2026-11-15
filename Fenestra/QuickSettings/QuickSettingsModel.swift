@@ -16,7 +16,10 @@ final class QuickSettingsModel: ObservableObject {
     @Published var focus = FocusControl.isOn
     @Published var airdrop = AirDrop.mode
     @Published var darkMode = Appearance.isDark
-    @Published var editing = false             // Edit quick settings: unpin, add, drag to reorder
+    @Published var editing = false {           // Edit quick settings: unpin, add, drag to reorder
+        didSet { if editing { wifiListOpen = false } }
+    }
+    @Published var wifiListOpen = false        // the Wi-Fi tile's chevron: network list open under its row
     @Published var brightness = Brightness.shared.value
     @Published var message: String?
     @Published var focusSetupStatus: String?   // progress line on the Set up Focus page
@@ -282,6 +285,16 @@ final class QuickSettingsModel: ObservableObject {
         scan()
     }
 
+    /// The Wi-Fi tile's chevron: opens the network list in place under the tile's row, or closes it again.
+    func toggleWiFiList() {
+        if wifiListOpen { wifiListOpen = false; return }
+        if wifiOn { networks = WiFi.shared.cachedNetworks() }
+        expandedSSID = SystemStatus.shared.ssid
+        joiningSSID = nil
+        wifiListOpen = true
+        scan()
+    }
+
     func scan() {
         guard wifiOn else { networks = []; return }
         scanning = true
@@ -291,6 +304,10 @@ final class QuickSettingsModel: ObservableObject {
             let ms = (DispatchTime.now().uptimeNanoseconds - started.uptimeNanoseconds) / 1_000_000
             Log.write("quicksettings: wifi \(networks.count) cached, \(nets.count) scanned in \(ms) ms")
             if !nets.isEmpty || networks.isEmpty { networks = nets }
+            let hotspots = nets.filter(\.isHotspot)
+            if !hotspots.isEmpty {
+                Log.write("quicksettings: hotspots: " + hotspots.map { "\($0.ssid ?? "?") apple-ie=\($0.hasAppleIE)" }.joined(separator: ", "))
+            }
             scanning = false
         }
     }

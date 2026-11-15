@@ -40,7 +40,7 @@ struct TaskbarSettingsView: View {
                 Toggle("Show time and date", isOn: $s.showClock)
                 Toggle("Show seconds in system tray clock", isOn: $s.showSeconds).disabled(!s.showClock)
                 Toggle("Show notification bell icon", isOn: $s.showBell)
-                Toggle("Show battery percentage", isOn: $s.showBatteryPercent)
+                if Battery.isPresent { Toggle("Show battery percentage", isOn: $s.showBatteryPercent) }
                 Picker("Keyboard layout (ENG US)", selection: $s.inputIndicator) {
                     ForEach(InputIndicator.allCases) { Text($0.label).tag($0) }
                 }

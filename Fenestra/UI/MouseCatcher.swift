@@ -11,6 +11,11 @@ struct MouseCatcher: NSViewRepresentable {
     var onPress: ((Bool) -> Void)? = nil
     var onDrag: ((CGFloat) -> Void)? = nil          // horizontal drag offset while dragging
     var onDragEnd: ((CGFloat) -> Void)? = nil
+    /// Pointer moves inside: point from the top-left of the view, and the view's screen rect.
+    /// Only views that set it get mouse-moved events (the taskbar stays cheap otherwise).
+    var onMove: ((CGPoint, NSRect) -> Void)? = nil
+    /// Scroll wheel or two-finger trackpad scroll over the view (point as for onMove). Without it, scrolls pass on.
+    var onScroll: ((NSEvent, CGPoint, NSRect) -> Void)? = nil
 
     func makeNSView(context: Context) -> CatcherView {
         let v = CatcherView()
@@ -35,13 +40,31 @@ struct MouseCatcher: NSViewRepresentable {
         override func updateTrackingAreas() {
             super.updateTrackingAreas()
             if let t = tracking { removeTrackingArea(t) }
-            let t = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-                                   owner: self, userInfo: nil)
+            var options: NSTrackingArea.Options = [.mouseEnteredAndExited, .activeAlways, .inVisibleRect]
+            if handlers?.onMove != nil { options.insert(.mouseMoved) }
+            let t = NSTrackingArea(rect: bounds, options: options, owner: self, userInfo: nil)
             addTrackingArea(t)
             tracking = t
         }
 
-        override func mouseEntered(with event: NSEvent) { handlers?.onHover?(true, screenRect) }
+        /// Event location from the view's top-left corner (SwiftUI's orientation).
+        private func topLeftPoint(_ event: NSEvent) -> CGPoint {
+            let p = convert(event.locationInWindow, from: nil)
+            return CGPoint(x: p.x, y: isFlipped ? p.y : bounds.height - p.y)
+        }
+
+        override func mouseEntered(with event: NSEvent) {
+            handlers?.onHover?(true, screenRect)
+            handlers?.onMove?(topLeftPoint(event), screenRect)
+        }
+        override func mouseMoved(with event: NSEvent) {
+            guard let move = handlers?.onMove else { return super.mouseMoved(with: event) }
+            move(topLeftPoint(event), screenRect)
+        }
+        override func scrollWheel(with event: NSEvent) {
+            guard let scroll = handlers?.onScroll else { return super.scrollWheel(with: event) }
+            scroll(event, topLeftPoint(event), screenRect)
+        }
         override func mouseExited(with event: NSEvent) {
             handlers?.onHover?(false, screenRect)
             if pressedInside { pressedInside = false; handlers?.onPress?(false) }
@@ -92,6 +115,8 @@ struct TaskbarButtonChrome<Content: View>: View {
     var onHoverChange: ((Bool, NSRect) -> Void)? = nil
     var onDrag: ((CGFloat) -> Void)? = nil
     var onDragEnd: ((CGFloat) -> Void)? = nil
+    var onMove: ((CGPoint, NSRect) -> Void)? = nil
+    var onScroll: ((NSEvent, CGPoint, NSRect) -> Void)? = nil
     @ViewBuilder var content: () -> Content
 
     @State private var hovering = false
@@ -111,7 +136,7 @@ struct TaskbarButtonChrome<Content: View>: View {
                     onLeft: onLeft, onRight: onRight, onMiddle: onMiddle,
                     onHover: { inside, rect in hovering = inside; onHoverChange?(inside, rect) },
                     onPress: { pressed = $0 },
-                    onDrag: onDrag, onDragEnd: onDragEnd
+                    onDrag: onDrag, onDragEnd: onDragEnd, onMove: onMove, onScroll: onScroll
                 )
             )
     }
