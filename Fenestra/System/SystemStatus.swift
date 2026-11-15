@@ -39,6 +39,11 @@ final class SystemStatus: ObservableObject {
         if Battery.isPresent {
             Battery.observe { SystemStatus.shared.battery = Battery.read() }
             battery = Battery.read()
+            // Battery saver changes don't come through IOKit's power source events.
+            NotificationCenter.default.addObserver(forName: .NSProcessInfoPowerStateDidChange, object: nil,
+                                                   queue: .main) { _ in
+                MainActor.assumeIsolated { SystemStatus.shared.battery = Battery.read() }
+            }
         } else {
             Log.write("battery: no internal battery, battery icon and listener off")
         }

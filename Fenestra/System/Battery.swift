@@ -11,6 +11,7 @@ enum Battery {
         var minutesToEmpty: Int? = nil
         var minutesToFull: Int? = nil
         var charged = false        // macOS reports the battery as full
+        var saver = false          // Low Power Mode (Fenestra's Battery saver tile)
 
         /// On the adapter but not taking charge: the charge limit (80% with Optimized Charging) or "Charging On Hold".
         var pluggedNotCharging: Bool { onAC && !charging }
@@ -35,6 +36,7 @@ enum Battery {
             s.charged = d[kIOPSIsChargedKey] as? Bool ?? false
             if let t = d[kIOPSTimeToEmptyKey] as? Int, t > 0 { s.minutesToEmpty = t }
             if let t = d[kIOPSTimeToFullChargeKey] as? Int, t > 0 { s.minutesToFull = t }
+            s.saver = ProcessInfo.processInfo.isLowPowerModeEnabled
             return s
         }
         return State()
@@ -65,9 +67,11 @@ enum Battery {
         }
     }
 
-    /// Bolt while charging, plug while on the adapter without charging (as macOS's own battery menu), else nothing.
+    /// Bolt while charging, a leaf while battery saver is on (Windows 11's energy saver mark), plug while on the
+    /// adapter without charging (as macOS's own battery menu), else nothing.
     static func badge(_ s: State) -> String? {
         if s.charging { return "bolt.fill" }
+        if s.saver { return "leaf.fill" }
         if s.onAC { return "powerplug.fill" }
         return nil
     }
@@ -83,6 +87,6 @@ enum Battery {
 
     /// Tray tooltip (Windows: "Battery status: 80% available (plugged in)").
     static func tooltip(_ s: State) -> String {
-        "Battery: \(s.percent)%" + (detail(s).map { ", \($0)" } ?? "")
+        "Battery: \(s.percent)%" + (detail(s).map { ", \($0)" } ?? "") + (s.saver ? "\nBattery saver is on" : "")
     }
 }

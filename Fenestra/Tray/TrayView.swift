@@ -170,7 +170,7 @@ struct BatteryIcon: View {
                 if let badge = Battery.badge(state) {
                     // Knocked out of the level fill (as the system's own bolt battery) so it reads at any level.
                     let glyph = Image(systemName: badge)
-                        .font(.system(size: size * (badge == "bolt.fill" ? 0.6 : 0.5), weight: .bold))
+                        .font(.system(size: size * (badge == "bolt.fill" ? 0.6 : badge == "leaf.fill" ? 0.44 : 0.5), weight: .bold))
                         .offset(x: -size * 0.06)
                     glyph.background(glyph.scaleEffect(1.35).blendMode(.destinationOut))
                 }
