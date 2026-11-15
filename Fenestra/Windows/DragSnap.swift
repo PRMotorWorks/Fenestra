@@ -349,7 +349,9 @@ final class DragSnap {
         Log.write("snap (drag): restore size of \(s.target.id) -> \(CaptionController.describe(target))")
         AX.setSize(s.target.element, target.size)
         AX.setPosition(s.target.element, target.origin)
-        if let now = AX.frame(s.target.element) { s.size = now.size }      // apps may keep a minimum size
+        let now = AX.frame(s.target.element)
+        if let now { s.size = now.size }      // apps may keep a minimum size
+        CaptionController.shared.dragWindowMoved(s.target.id, to: now?.origin ?? target.origin)
     }
 
     private static func mouse() -> CGPoint {

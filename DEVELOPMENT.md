@@ -268,8 +268,9 @@ directly below the main one, so the Dock can't live under the taskbar and the se
 Every window with traffic lights gets Windows 11 minimize, maximize/restore and close buttons in their place
 (top-left, your choice). macOS can't restyle another app's title bar without disabling SIP, so each window gets a
 small panel of Fenestra's, ordered directly above that window, covering the traffic lights. It follows the window
-through Accessibility events (no polling). While you drag a window the buttons hide (the traffic lights show) and
-they come back the moment you let go; following a dragged window from a separate window wobbles (see below).
+through Accessibility events (no polling). While you drag a window by its title bar the buttons move with it
+(since 2026-11-15; before, they hid during the drag and the traffic lights showed). See "Following a dragged
+window" below for how, and what is left of the old wobble.
 After every click and app switch Fenestra also checks the window order once and puts any panel that fell behind
 its window back on top (some apps, Electron ones included, raise their windows without telling Accessibility).
 Glyphs are drawn by Fenestra (vector paths, 10 x 10 pt like Segoe Fluent Icons); no Microsoft assets.
@@ -301,7 +302,9 @@ compact size because their tabs start right beside the traffic lights. Settings 
 | Window events | shared `AXObserver` hub (`WindowEvents`): created, destroyed, moved, resized, minimized, focus; `NSWorkspace` activate/hide/unhide/Space change | Accessibility + public |
 | AX window to window ID | `_AXUIElementGetWindow` (HIServices) | **private** (already used) |
 | On-screen check, z-order, drag detection | `CGWindowListCopyWindowInfo` (`.optionOnScreenOnly`, `.optionIncludingWindow`) | public |
-| Hide while dragging | `NSEvent.addGlobalMonitorForEvents` `.leftMouseDown`; a listen-only `CGEvent.tapCreate` (`.cgSessionEventTap`, drag and mouse-up only, on only during a title bar press) to hide at the first drag event; one `AXUIElementCopyElementAtPosition` at mouse-down tells empty title bar from controls | public (needs Accessibility) |
+| Follow a dragged window | `NSEvent.addGlobalMonitorForEvents` `.leftMouseDown`; an **active** `CGEvent.tapCreate` (`.cgSessionEventTap`, head insert, drag and mouse-up only, on only during a title bar press; it passes every event on unchanged) so the panel moves before the window server routes each event; one `AXUIElementCopyElementAtPosition` at mouse-down tells empty title bar from controls | public (needs Accessibility) |
+| Move the panel without a frame of delay | `SLSMainConnectionID`, `SLSMoveWindow` (SkyLight, `dlsym`) on Fenestra's own panel only; AppKit `setFrame` afterwards so AppKit agrees | **private** (own windows only; falls back to AppKit `setFrame` + `CATransaction.flush()`) |
+| Follow apps that move their own window (Chromium, Electron) | `CGWindowListCopyWindowInfo` `.optionIncludingWindow` for that one window every 0.6 ms on a background queue, only during the drag and 40 ms after each drag event (also 0.25 s after Fenestra snaps or maximizes a window) | public |
 | Keep panels on top | at mouse-down on a window its panel is lifted to `NSWindow.Level.normal + 1` until 0.3 s after release, so the click-to-front (and apps that raise their own window, like Claude) land underneath it; plus one `CGWindowListCopyWindowInfo` read 30 ms and 400 ms after each click or app switch to re-`order(.above, relativeTo:)` any panel not directly above its window | public |
 | Glyphs, hover and press states | Core Animation `CAShapeLayer` / `CALayer` implicit 80 ms fades, no redraws | public |
 | Title bar color match | `SCScreenshotManager.captureImage` with `SCContentFilter(desktopIndependentWindow:)` and a `sourceRect` of the window's top-left corner | public, Screen Recording |
@@ -328,7 +331,7 @@ compact size because their tabs start right beside the traffic lights. Settings 
 | 10 | Rest the pointer on maximize | Snap Layouts flyout | after 0.4 s, under the button: 5 layouts in two rows |
 | 11 | Hover a zone, click it | zone turns accent color, window snaps there, Snap Assist fills the rest | same |
 | 12 | Move the pointer away from flyout and button | flyout closes | same, after 0.3 s |
-| 13 | Drag a window by its title bar | buttons move with the window | buttons hide while it moves (traffic lights show), back on release |
+| 13 | Drag a window by its title bar (Finder, Claude, Brave; slow, fast, into the top edge; a maximized one out of maximize) | buttons move with the window | buttons move with the window; at fast drags an occasional single frame shows a sliver of a traffic light (user check on 120 Hz and 60 Hz displays, 2026-11-15: "good enough to keep") |
 | 14 | TextEdit: type something, close, Don't Save | app exits with its last window | same |
 | 15 | Close the last Finder window | window closes | same; Finder keeps running (never quits) |
 | 15b | Click Wi-Fi/volume/battery on the taskbar | Quick Settings opens | same (this was broken: every flyout opened at 0 x 0 pt) |
@@ -341,11 +344,13 @@ compact size because their tabs start right beside the traffic lights. Settings 
 - They're an overlay, not part of the window. Clicking a window is covered (the buttons are lifted before the app
   raises it), but a window brought forward without a click (Cmd-Tab, Dock, another app) can show its traffic lights
   for a frame or two before Fenestra re-orders its panel.
-- While a window is dragged the buttons hide and the traffic lights show. Following the window was tried at length:
-  the buttons are a separate window, macOS reports another app's window position 1 to 3 frames late, and it holds
-  windows at edges and the menu bar, so they wobbled around it. With SIP on there is no way to attach a window
-  to another app's window.
-  They hide while a window is resized from its top or left edge.
+- While a window is dragged the buttons follow it, but they are a separate window: at fast drags a single frame
+  now and then is a few points off and shows a sliver of a traffic light (most often in Chromium and Electron
+  apps, whose compact buttons leave ~3 pt of margin). With SIP on there is no way to attach a window to another
+  app's window. The buttons still hide while a window is resized from its top or left edge, and a window that
+  doesn't move with the pointer at all gets the old behavior (hidden until release).
+- When an app opens a new window its traffic lights show until Fenestra has placed the panel (a moment after the
+  window appears, longer while macOS animates the window in).
 - Background: with Screen Recording, the title bar's look is sampled from the area the buttons cover (around the
   traffic lights, row by row, most common color so icons and title text don't tint it) when a window appears,
   changes size or gets focus (at most every 3 s); if an app later changes its title bar color (for example Safari
@@ -362,6 +367,45 @@ compact size because their tabs start right beside the traffic lights. Settings 
 - Windows without traffic lights (custom title bars, some games and panels) keep their own controls; Fenestra's own
   Settings window keeps its traffic lights.
 - Minimize still animates toward the hidden Dock's position.
+
+### Following a dragged window (2026-11-15)
+
+Until 2026-11-15 the buttons hid during a drag, because an earlier attempt to follow wobbled. Measured this time
+(trace of every drag event and frame captures of real drags), the wobble had three causes, each fixed:
+
+1. **AppKit sends a window move only at the end of the run loop pass** (0 of 100 `setFrame` moves were in the
+   window list right after the call; 100 of 100 after `CATransaction.flush()`), and even flushed it is drawn a
+   frame late. The panel is now moved with SkyLight's `SLSMoveWindow` (immediate, 0.002 ms).
+2. **The event tap was listen-only**, so the window server moved the window without waiting. It is now an active
+   tap (it changes nothing): each drag event waits the ~0.04 ms it takes to place the panel.
+3. **Reading the window list per event** cost 0.5 to 12 ms during a drag and was often one event stale. Windows
+   the window server drags (Finder, TextEdit, most native apps) keep the grab point under the pointer, so the panel
+   goes to `pointer - grab offset` with no read at all; a check after each event (off the event path) learns
+   where macOS holds the window (top of a display, known up front too) and catches a changed grab offset.
+
+Two kinds of window behave differently:
+
+- **Chromium and Electron apps (Brave, Chrome, Claude, VS Code...) move their own windows**, one mouse event late
+  and unevenly, so the pointer can't predict them. For those, `DragChaser` reads that one window's position every
+  0.6 ms on a background queue during the drag and moves the panel the moment it changes.
+- **A snapped or maximized window dragged away** is resized by Fenestra under the pointer ~0.1 s into the drag;
+  from then on that drag is followed the same way (watching the window, not the pointer).
+
+Fenestra's own snaps, maximize and restore also watch the window for 0.25 s, so the buttons ride along instead of
+being put back at the old spot on release. Nothing runs between drags: the tap is off, the chase loop stops 40 ms
+after the last drag event, idle CPU stays 0.0%.
+
+Settings for testing (none needed normally, `defaults write local.fenestra.Fenestra <key> ...`, then restart):
+
+| Key | Effect |
+|---|---|
+| `captionHideWhileDragging -bool true` | old behavior: buttons hidden while a window is dragged |
+| `captionDragMove appkit` | move the panel through AppKit (`setFrame` + flush) instead of `SLSMoveWindow` |
+| `captionDragLagMs <ms>` | how far back along the motion the panel is placed for window-server drags (default 3) |
+| `captionDragTrace -bool true` | per-event trace to ~/Library/Logs/Fenestra-follow.txt, plus a capture of the display during each drag counting frames that show traffic lights (`dragcapture:` lines in the app log, crops in ~/Library/Logs/Fenestra-dragtest/frame-*.png). Costly: only for measuring |
+
+Every followed drag (pointer mode) logs `captions drag: followed window <id>, N events, N checks off by more
+than 1.5 pt, max N pt, N ms per event`.
 
 ## Phase 4: snapping, Snap Assist, Alt+Tab, Task View
 
@@ -394,7 +438,7 @@ Snap Assist, Option+Tab).
 | Feature | API | Tier |
 |---|---|---|
 | Turn off macOS tiling | `com.apple.WindowManager` `EnableTilingByEdgeDrag`, `EnableTopTilingByEdgeDrag`, `EnableTilingOptionAccelerator` (names from the Desktop & Dock settings extension), `killall WindowManager` | defaults, undocumented keys |
-| Recognize a window drag | shared `AXObserver` hub: `kAXWindowMovedNotification` while the left button is down (same signal the caption buttons hide on), grab point in the title band; `kAXWindowResizedNotification` aborts (edge resize) | Accessibility |
+| Recognize a window drag | shared `AXObserver` hub: `kAXWindowMovedNotification` while the left button is down (same signal the caption buttons react to), grab point in the title band; `kAXWindowResizedNotification` aborts (edge resize) | Accessibility |
 | Follow the pointer during a drag | listen-only `CGEvent.tapCreate` (`.cgSessionEventTap`, left drag and up), enabled only while a window is dragged | public (needs Accessibility) |
 | Preview, snap layouts bar, Snap Assist | `NSPanel` (borderless, non-activating), `NSVisualEffectView`, preview ordered with `order(.below, relativeTo:)` under the dragged window, Core Animation frame animation | public |
 | Move/resize, maximize, restore | `kAXSizeAttribute` / `kAXPositionAttribute` via `CaptionController.setFrame`, work area = `NSScreen.visibleFrame` minus `TaskbarController.reservedHeight` | Accessibility |
