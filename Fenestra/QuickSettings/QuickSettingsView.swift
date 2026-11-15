@@ -37,7 +37,12 @@ struct QuickSettingsView: View {
         }
         .frame(width: 360)
         .onAppear { m.refresh() }
+        // Built ahead of time (FlyoutManager.prepare): read the current state again when it actually opens.
+        .onReceive(NotificationCenter.default.publisher(for: FlyoutManager.didShow)) { n in
+            if n.object as? String == QuickSettingsView.flyoutID { m.refresh() }
+        }
     }
+    static let flyoutID = "quick"
 
     private var mainPage: some View {
         VStack(spacing: 18) {

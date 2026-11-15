@@ -853,3 +853,22 @@ Where the release is seen (all three apply the same rules):
 Every drag logs one line: `drag: <id> ended (...) after N ms, N pointer updates, last at x,y, up at x,y, zone ...`
 with the rule that matched or why nothing did (speed, distance to the edge). Idle cost: none (measured 0.0% CPU).
 
+## Flyout opening speed (2026-11-15)
+
+Quick Settings and the calendar are built ahead of time: Fenestra keeps one drawn, hidden copy of each
+(`FlyoutManager.prepare(id:)`, made 1.5 s after launch and again 0.5 s after each close, so every opening still
+starts from a fresh view; a copy from another day is rebuilt so the calendar's date is right). Opening one only
+positions and shows it. Quick Settings re-reads Wi-Fi, Bluetooth and the other tile states when it opens
+(`FlyoutManager.didShow`). Every flyout draws its first frame before the slide-up starts, so the slide begins
+at the bottom instead of jumping most of the way in one frame.
+
+| Measure (switching Quick Settings / calendar) | Before | After |
+|---|---|---|
+| Click to first movement | 58 to 145 ms | 3 to 15 ms |
+| First visible frame | ~60% of the slide | at the bottom |
+| Idle CPU / memory | 0.0% / 33 to 42 MB | 0.0% / ~60 MB |
+
+Diagnostics (no setting needed): distributed notification `local.fenestra.debug.flyout` (any object) opens Quick
+Settings, switches to the calendar and back, and logs each step's timeline (`grep flyouttest
+~/Library/Logs/Fenestra-app.log`). Each opening logs `flyout: <id> prepared|built now, animation starts N ms after
+the click`.

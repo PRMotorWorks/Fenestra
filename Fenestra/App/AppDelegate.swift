@@ -35,11 +35,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         AX.configureTimeouts()
         MenuBarDiagnostics.install()
+        FlyoutDiagnostics.install()
         Log.write("launch: accessibility=\(AXIsProcessTrusted()) screenRecording=\(CGPreflightScreenCaptureAccess()) " +
                   "location=\(Permissions.shared.location.rawValue)")
         TaskbarController.shared.start()
         SystemStatus.shared.start()
         StartController.shared.prepare()
+        FlyoutManager.shared.prepare(id: QuickSettingsView.flyoutID) { QuickSettingsView() }
+        FlyoutManager.shared.prepare(id: "calendar") { CalendarFlyout() }
         ClipboardHistory.shared.start()
         AirDrop.resumeExpiry()
         AppDelegate.startAccessibilityFeatures()

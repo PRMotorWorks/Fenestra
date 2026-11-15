@@ -45,22 +45,27 @@ final class FlyoutManager {
     func show<V: View>(id: String, anchor: NSRect, align: HorizontalAlignment = .trailing,
                        gap: CGFloat = 12, placement: Placement = .aboveTaskbar, keyable: Bool = true,
                        onClose: (() -> Void)? = nil, @ViewBuilder content: () -> V) {
+        let t0 = CACurrentMediaTime()
         close(animated: false)
         currentID = id
         self.onClose = onClose
         ignoreRect = anchor
         self.placement = placement
-
         currentAlign = align
-        let host = FirstClickHostingView(rootView: FlyoutChrome(content: content()))
-        // Measure with the default sizing options (fittingSize is 0 x 0 without them), then stop SwiftUI
-        // from resizing the window itself: AppKit would keep the top edge fixed and grow it downward behind
-        // the taskbar. contentSizeChanged() resizes it from the bottom instead.
-        host.layoutSubtreeIfNeeded()
-        var size = host.fittingSize
-        if size.width < 1 || size.height < 1 { size = host.intrinsicContentSize }
-        host.sizingOptions = []
-        host.roundCorners(8)
+
+        // A flyout built ahead of time (Quick Settings, calendar) skips SwiftUI's first layout: 40 to 120 ms
+        // between the click and the first frame (measured 2026-11-15). Yesterday's calendar is built again.
+        let built: Built
+        var warm = false
+        if let pre = prepared.removeValue(forKey: id), pre.day == FlyoutManager.today() {
+            built = pre.built
+            warm = true
+        } else {
+            built = build(content())
+        }
+        let p = built.panel
+        let size = built.token.size
+        token = built.token
 
         let screen: NSScreen
         if placement == .below {
@@ -90,9 +95,67 @@ final class FlyoutManager {
         let finalFrame = NSRect(x: x, y: y, width: size.width, height: size.height)
         let slide: CGFloat = placement == .below ? 8 : -24
 
-        let p = FlyoutPanel(contentRect: finalFrame, styleMask: [.borderless, .nonactivatingPanel],
-                            backing: .buffered, defer: false)
         p.keyable = keyable
+        p.ignoresMouseEvents = false
+        p.alphaValue = 0
+        p.setFrame(finalFrame.offsetBy(dx: 0, dy: slide), display: false)
+        p.orderFrontRegardless()
+        panel = p
+        installMonitors()
+        NotificationCenter.default.post(name: FlyoutManager.didShow, object: id)
+
+        // Draw the first frame before the animation clock starts. Started at once, the slide's first visible
+        // frame landed 60% of the way up (the Windows curve does most of its move early) and looked like a jump.
+        p.displayIfNeeded()
+        CATransaction.flush()
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                guard FlyoutManager.shared.panel === p else { return }
+                p.invalidateShadow()
+                NSAnimationContext.runAnimationGroup { ctx in
+                    ctx.duration = 0.2
+                    ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.1, 0.9, 0.2, 1)   // Windows "decelerate"
+                    p.animator().alphaValue = 1
+                    p.animator().setFrame(finalFrame, display: true)
+                }
+                let m = FlyoutManager.shared
+                m.openedAt = CACurrentMediaTime()
+                m.lastShowMs = (m.openedAt - t0) * 1000
+                Log.write(String(format: "flyout: %@ %@, animation starts %.0f ms after the click", id,
+                                 warm ? "prepared" : "built now", m.lastShowMs))
+            }
+        }
+    }
+    /// Main-thread time from show() to the start of its animation (FlyoutDiagnostics).
+    private(set) var lastShowMs: Double = 0
+
+    /// Posted with the flyout's id as the object when it opens (a prepared view refreshes its state then).
+    static let didShow = Notification.Name("FlyoutManager.didShow")
+
+    // MARK: Building panels, and flyouts prepared ahead of time
+
+    private struct Built { let panel: FlyoutPanel; let token: FlyoutToken }
+    private struct Prepared { let built: Built; let day: Int }
+    private var prepared: [String: Prepared] = [:]
+    private var builders: [String: () -> AnyView] = [:]
+    private var token: FlyoutToken?
+
+    private static func today() -> Int { Calendar.current.ordinality(of: .day, in: .era, for: Date()) ?? 0 }
+
+    private func build<V: View>(_ content: V) -> Built {
+        let token = FlyoutToken()
+        let host = FirstClickHostingView(rootView: FlyoutChrome(content: content, token: token))
+        // Measure with the default sizing options (fittingSize is 0 x 0 without them), then stop SwiftUI
+        // from resizing the window itself: AppKit would keep the top edge fixed and grow it downward behind
+        // the taskbar. contentSizeChanged() resizes it from the bottom instead.
+        host.layoutSubtreeIfNeeded()
+        var size = host.fittingSize
+        if size.width < 1 || size.height < 1 { size = host.intrinsicContentSize }
+        token.size = size
+        host.sizingOptions = []
+        host.roundCorners(8)
+        let p = FlyoutPanel(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel],
+                            backing: .buffered, defer: false)
         p.level = .statusBar
         p.isOpaque = false
         p.backgroundColor = .clear
@@ -100,28 +163,52 @@ final class FlyoutManager {
         p.collectionBehavior = [.canJoinAllSpaces, .transient, .ignoresCycle]
         p.contentView = host
         ArrowCursor.install(on: host)
-        p.alphaValue = 0
-        p.setFrame(finalFrame.offsetBy(dx: 0, dy: slide), display: false)
-        p.orderFrontRegardless()
-        DispatchQueue.main.async { p.invalidateShadow() }
-        panel = p
+        return Built(panel: p, token: token)
+    }
 
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.2
-            ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.1, 0.9, 0.2, 1)   // Windows "decelerate"
-            p.animator().alphaValue = 1
-            p.animator().setFrame(finalFrame, display: true)
+    /// Keeps one copy of this flyout built and drawn, hidden, so opening it doesn't wait for SwiftUI.
+    /// A fresh copy is made after each close, so every opening starts from a new view as before.
+    func prepare<V: View>(id: String, @ViewBuilder content: @escaping () -> V) {
+        builders[id] = { AnyView(content()) }
+        schedulePrepare(id, after: 1.5)
+    }
+
+    private func schedulePrepare(_ id: String, after delay: Double) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            MainActor.assumeIsolated { FlyoutManager.shared.prepareNow(id) }
         }
-        openedAt = CACurrentMediaTime()
-        installMonitors()
+    }
+
+    private func prepareNow(_ id: String) {
+        guard let make = builders[id], currentID != id else { return }
+        if let pre = prepared[id], pre.day == FlyoutManager.today() { return }
+        let t0 = CACurrentMediaTime()
+        let built = build(make())
+        // Draw it once, invisible and click-through, so the first frame on opening is ready too.
+        let p = built.panel
+        let screen = NSScreen.screens[0].frame
+        p.ignoresMouseEvents = true
+        p.alphaValue = 0
+        p.setFrameOrigin(NSPoint(x: screen.maxX - p.frame.width - 12, y: screen.minY + Theme.taskbarHeight + 12))
+        p.orderFrontRegardless()
+        p.displayIfNeeded()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            MainActor.assumeIsolated {
+                if FlyoutManager.shared.panel !== p { p.orderOut(nil) }
+            }
+        }
+        prepared[id] = Prepared(built: built, day: FlyoutManager.today())
+        Log.write(String(format: "flyout: %@ prepared in %.0f ms", id, (CACurrentMediaTime() - t0) * 1000))
     }
 
     private var currentAlign: HorizontalAlignment = .trailing
 
     /// Called by FlyoutChrome whenever its content's natural size changes (e.g. opening the Wi-Fi list).
     /// The bottom edge stays just above the taskbar and the panel grows upward, as on Windows.
-    func contentSizeChanged(_ size: CGSize) {
-        guard let p = panel, size.width > 0, size.height > 0 else { return }
+    func contentSizeChanged(_ size: CGSize, token: FlyoutToken) {
+        guard size.width > 0, size.height > 0 else { return }
+        token.size = size
+        guard let p = panel, token === self.token else { return }   // a prepared, hidden flyout: just remember it
         let old = p.frame
         guard abs(old.width - size.width) > 0.5 || abs(old.height - size.height) > 0.5 else { return }
         var x: CGFloat
@@ -145,13 +232,15 @@ final class FlyoutManager {
             p.animator().setFrame(frame, display: true)
         }, completionHandler: { p.invalidateShadow() })
     }
-    private var openedAt: CFTimeInterval = 0
+    fileprivate var openedAt: CFTimeInterval = 0
 
     func makeKey() { panel?.makeKey() }
 
     func close(animated: Bool = true) {
         removeMonitors()
+        if let id = currentID, builders[id] != nil { schedulePrepare(id, after: 0.5) }
         currentID = nil
+        token = nil
         if let done = onClose { onClose = nil; done() }
         guard let p = panel else { return }
         panel = nil
@@ -191,9 +280,15 @@ final class FlyoutManager {
 }
 
 /// Acrylic background, 8 px corners and hairline border shared by all flyouts.
+/// Ties a FlyoutChrome to its panel, so a prepared (hidden) flyout's size changes don't resize the open one.
+final class FlyoutToken {
+    var size: CGSize = .zero
+}
+
 struct FlyoutChrome<Content: View>: View {
     @Environment(\.colorScheme) private var scheme
     let content: Content
+    let token: FlyoutToken
     var body: some View {
         content
             .background(Theme.flyoutTint(scheme))
@@ -204,7 +299,7 @@ struct FlyoutChrome<Content: View>: View {
             .font(Theme.font(13))
             .fixedSize()
             .onGeometryChange(for: CGSize.self, of: { $0.size }) { size in
-                FlyoutManager.shared.contentSizeChanged(size)
+                FlyoutManager.shared.contentSizeChanged(size, token: token)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
     }
