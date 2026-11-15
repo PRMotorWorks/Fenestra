@@ -19,7 +19,7 @@ KEYS=(
   "dock|com.apple.dock|autohide-delay|float|1000"
   "dock|com.apple.dock|autohide-time-modifier|float|0"
   "dock|com.apple.dock|minimize-to-application|bool|true"
-  # Phase 1: Explorer-like Finder settings (your answer to question 4)
+  # Phase 1: Explorer-like Finder settings
   "finder|com.apple.finder|ShowPathbar|bool|true"
   "finder|com.apple.finder|ShowStatusBar|bool|true"
   "finder|com.apple.finder|_FXSortFoldersFirst|bool|true"

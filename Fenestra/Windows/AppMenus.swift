@@ -186,7 +186,7 @@ final class AppMenus: NSObject, NSMenuDelegate {
             if let mark: String = AX.attr(el, kAXMenuItemMarkCharAttribute), !mark.isEmpty {
                 item.state = mark == "-" ? .mixed : .on
             }
-            if let sub {
+            if sub != nil {
                 item.submenu = lazySubmenu(title: title, for: el)
             } else {
                 item.action = #selector(pick(_:))

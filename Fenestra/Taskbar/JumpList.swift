@@ -1,5 +1,4 @@
 import AppKit
-import UniformTypeIdentifiers
 
 /// Recent files for an app, from Spotlight (NSMetadataQuery). macOS doesn't expose an app's own
 /// recent-documents list to other apps, so this matches recently used files of the types the app opens.

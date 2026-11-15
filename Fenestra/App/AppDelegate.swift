@@ -34,8 +34,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Lifecycle.applyDefaults()
 
         AX.configureTimeouts()
-        MenuBarDiagnostics.install()
-        FlyoutDiagnostics.install()
+        // Test hooks driven by distributed notifications, which any local process can post: only when
+        // `defaults write local.fenestra.Fenestra captionDebug -bool true` is set, never in a normal install.
+        if UserDefaults.standard.bool(forKey: "captionDebug") {
+            MenuBarDiagnostics.install()
+            FlyoutDiagnostics.install()
+        }
         Log.write("launch: accessibility=\(AXIsProcessTrusted()) screenRecording=\(CGPreflightScreenCaptureAccess()) " +
                   "location=\(Permissions.shared.location.rawValue)")
         TaskbarController.shared.start()

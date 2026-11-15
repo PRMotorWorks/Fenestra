@@ -1,6 +1,6 @@
 import AppKit
 
-/// Flyout animation smoothness test (no setting needed): distributed notification "local.fenestra.debug.flyout"
+/// Flyout animation smoothness test (only with `captionDebug`): distributed notification "local.fenestra.debug.flyout"
 /// with object "switch" opens Quick Settings, then switches to the calendar and back the way a tray click does
 /// (outside-click close, then the button's toggle), sampling the open panel's frame while it animates.
 /// Results: `grep flyouttest ~/Library/Logs/Fenestra-app.log`.

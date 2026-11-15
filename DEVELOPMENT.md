@@ -648,7 +648,7 @@ ms, a submenu 2 to 20 ms).
 | 12 | Windows settings > turn off "Hide the macOS menu bar", then on | n/a | the menu bar appears at once, then hides again |
 | 13 | `top -pid $(pgrep -x Fenestra)` with nothing moving | n/a | under 1% CPU (measured 0.0%, 33 MB) |
 
-Diagnostics (read-only, no setting needed): distributed notification `local.fenestra.debug.menubar` with object
+Diagnostics (read-only, needs `captionDebug`): distributed notification `local.fenestra.debug.menubar` with object
 "dump" (every app's icons, the menu bar windows, icon captures to ~/Library/Logs/Fenestra-dragtest/extra-*.png),
 "build Finder" (the dropdown Fenestra would show, logged; nothing opens), "attrs Finder" (AX attributes of the Apple
 menu items) or "press <identifier or bundle ID>" (presses one icon, logs where its menu opened, then closes it with
@@ -914,7 +914,7 @@ at the bottom instead of jumping most of the way in one frame.
 | First visible frame | ~60% of the slide | at the bottom |
 | Idle CPU / memory | 0.0% / 33 to 42 MB | 0.0% / ~60 MB |
 
-Diagnostics (no setting needed): distributed notification `local.fenestra.debug.flyout` (any object) opens Quick
+Diagnostics (needs `captionDebug`): distributed notification `local.fenestra.debug.flyout` (any object) opens Quick
 Settings, switches to the calendar and back, and logs each step's timeline (`grep flyouttest
 ~/Library/Logs/Fenestra-app.log`). Each opening logs `flyout: <id> prepared|built now, animation starts N ms after
 the click`.

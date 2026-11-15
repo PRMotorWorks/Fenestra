@@ -1,7 +1,7 @@
 import AppKit
 import ScreenCaptureKit
 
-/// Diagnostics only (Phase 6): logs what Accessibility and the window list expose about menu bar extras
+/// Diagnostics only (Phase 6, only with `captionDebug`): logs what Accessibility and the window list expose about menu bar extras
 /// and app menus. Triggered by the distributed notification "local.fenestra.debug.menubar":
 ///   object "dump"            read-only: every app's AXExtrasMenuBar, menu bar layer windows, icon captures
 ///   object "press <ident>"   presses one extra, logs where its menu opened, then cancels it
