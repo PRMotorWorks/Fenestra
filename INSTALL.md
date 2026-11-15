@@ -64,6 +64,11 @@ Right-click the taskbar > **Quit Fenestra and restore the Dock**. Drag the new F
 Applications and choose **Replace**, then open it. Your settings stay. macOS may ask you to grant the permissions
 again, and to click **Open Anyway** once more (step 2): this build isn't notarized yet.
 
+If System Settings shows Fenestra's Accessibility or Screen Recording switch **on** but the Fenestra permissions
+window still says it isn't allowed (and snapping, Alt+Tab or thumbnails don't work), the switch belongs to the
+earlier copy. Click **Reset and allow again** under that permission, then turn the new switch on. The same happens
+when two accounts on one Mac use different builds of Fenestra: they share one switch.
+
 ## Uninstalling
 
 Right-click the taskbar > **Taskbar settings** > **Fenestra** tab > **Uninstall…**. Your Dock, menu bar and every

@@ -72,6 +72,21 @@ final class Permissions: NSObject, ObservableObject, CLLocationManagerDelegate {
         }
     }
 
+    /// System Settings shows one switch per bundle ID, but macOS only honours it for the copy of Fenestra that
+    /// was allowed: a copy signed differently (an earlier ad-hoc build from the disk image, or the developer build
+    /// another account on this Mac uses) shows the switch on while macOS still refuses it. Removing the old entry
+    /// (`tccutil reset`, no password needed for the app's own entry) and asking again adds one for this copy.
+    func resetAndRequest(_ service: String) {
+        guard let id = Bundle.main.bundleIdentifier else { return }
+        let r = Shell.run("/usr/bin/tccutil", ["reset", service, id])
+        Log.write("permissions: reset \(service) for \(id): \(r.status == 0 ? "done" : r.output)")
+        switch service {
+        case "Accessibility": requestAccessibility()
+        case "ScreenCapture": requestScreenRecording()
+        default: break
+        }
+    }
+
     nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         Task { @MainActor in Permissions.shared.refresh() }
     }
@@ -88,10 +103,10 @@ struct PermissionsView: View {
 
             row("Accessibility", "hand.raised", p.accessibility,
                 "Lets the taskbar bring windows forward, minimize and restore them, open a new window on middle-click, and keep maximized windows above the taskbar.",
-                action: p.requestAccessibility)
+                action: p.requestAccessibility, reset: { p.resetAndRequest("Accessibility") })
             row("Screen & System Audio Recording", "rectangle.dashed.badge.record", p.screenRecording,
-                "Used only for the window thumbnails when you hover over a taskbar icon. Nothing is recorded or saved. macOS may ask you to confirm this again from time to time.",
-                action: p.requestScreenRecording)
+                "Used only for the window thumbnails when you hover over a taskbar icon. Nothing is recorded or saved. macOS may ask you to confirm this again from time to time. After you allow it, choose Quit & Reopen when macOS asks.",
+                action: p.requestScreenRecording, reset: { p.resetAndRequest("ScreenCapture") })
             row("Location", "location", p.location == .authorizedAlways,
                 "macOS hides the Wi-Fi network name from apps without Location access. Fenestra never reads your location.",
                 action: p.requestLocation)
@@ -113,12 +128,20 @@ struct PermissionsView: View {
     }
 
     private func row(_ title: String, _ icon: String, _ granted: Bool, _ why: String,
-                     action: @escaping () -> Void) -> some View {
+                     action: @escaping () -> Void, reset: (() -> Void)? = nil) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: icon).font(.title2).frame(width: 30)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.headline)
                 Text(why).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                if !granted, let reset {
+                    // The switch can show on for another copy of Fenestra (older version, other account).
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("Already on in System Settings?").font(.callout).foregroundStyle(.secondary)
+                        Button("Reset and allow again", action: reset).buttonStyle(.link).font(.callout)
+                    }
+                    .padding(.top, 2)
+                }
             }
             Spacer(minLength: 8)
             if granted {
