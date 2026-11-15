@@ -556,7 +556,7 @@ final class DragSnap {
         // Edge drags: behind the dragged window, above every other window (Windows 11; user's choice 2026-11-15).
         // Snap bar: in front, where the window would otherwise hide it.
         let from = AX.frame(s.target.element), icon = WindowList.icon(s.target.pid)
-        if z.fromBar { preview.show(target, from: from, icon: icon, above: s.target.id) }
+        if z.fromBar { preview.show(target, from: from, icon: icon, above: s.target.id, glide: false) }
         else { preview.show(target, from: from, icon: icon, below: s.target.id) }
     }
 }
@@ -575,24 +575,39 @@ final class SnapPreview {
         show(frame, from: start, icon: icon, relativeTo: id, place: .below)
     }
 
-    func show(_ frame: CGRect, from start: CGRect?, icon: NSImage, above id: CGWindowID) {
-        show(frame, from: start, icon: icon, relativeTo: id, place: .above)
+    /// `glide: false` jumps to the zone and only fades in: used for the snap bar during a drag, where the pointer
+    /// crosses many zones and each glide resized a blurred window on the main thread every frame (choppy drags).
+    func show(_ frame: CGRect, from start: CGRect?, icon: NSImage, above id: CGWindowID, glide: Bool = true) {
+        show(frame, from: start, icon: icon, relativeTo: id, place: .above, glide: glide)
     }
 
     private func show(_ frame: CGRect, from start: CGRect?, icon: NSImage, relativeTo id: CGWindowID,
-                      place: NSWindow.OrderingMode) {
+                      place: NSWindow.OrderingMode, glide: Bool = true) {
         let p = panel ?? make()
         let target = CaptionController.shared.cocoaRect(frame).insetBy(dx: 6, dy: 6)
         iconView?.image = icon
         styleTint()
         if !visible {
             visible = true
-            let from = start.map { CaptionController.shared.cocoaRect($0) } ?? target
+            let from = glide ? (start.map { CaptionController.shared.cocoaRect($0) } ?? target) : target
             p.setFrame(from, display: false)
             p.alphaValue = 0
         }
         // Every time: an app may raise its window after the preview appeared.
         p.order(place, relativeTo: Int(id))
+        if !glide {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0                    // ends any glide still running
+                p.animator().setFrame(target, display: true)
+            }
+            if p.alphaValue < 1 {
+                NSAnimationContext.runAnimationGroup { ctx in
+                    ctx.duration = 0.12
+                    p.animator().alphaValue = 1
+                }
+            }
+            return
+        }
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.2
             ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.1, 0.9, 0.2, 1)
@@ -672,7 +687,7 @@ final class SnapBar {
     func track(_ p: CGPoint, screenTop: CGFloat, workArea wa: CGRect) -> Hit? {
         if wa != workArea { configure(wa) }
         // The very top edge is "maximize", left to DragSnap.
-        guard p.y > screenTop else { if model.expanded { model.expanded = false; model.highlight = nil }; return nil }
+        guard p.y > screenTop else { if model.expanded { model.expanded = false; setHighlight(nil) }; return nil }
         let e = expandedFrame
         let inExpanded = p.x >= e.minX - 16 && p.x <= e.maxX + 16 && p.y <= e.maxY + 16
         let reveal = p.y <= wa.minY + 48 && abs(p.x - wa.midX) <= 100
@@ -686,21 +701,27 @@ final class SnapBar {
                     let r = CGRect(x: tile.minX + unit.minX * tile.width, y: tile.minY + unit.minY * tile.height,
                                    width: unit.width * tile.width, height: unit.height * tile.height).insetBy(dx: 1.5, dy: 1.5)
                     if r.contains(p) {
-                        model.highlight = SnapBarModel.Key(layout: i, zone: z)
+                        setHighlight(SnapBarModel.Key(layout: i, zone: z))
                         return .zone(layout, unit)
                     }
                 }
             }
-            model.highlight = nil
+            setHighlight(nil)
             return .bar
         }
         if nearTop {
             show(expanded: false)
-            model.highlight = nil
+            setHighlight(nil)
             return .bar
         }
         hide()
         return nil
+    }
+
+    /// Runs on every drag event: assigning a @Published value redraws the whole bar even when it is unchanged,
+    /// and that main-thread work held up the drag (the caption tap makes the window server wait for it).
+    private func setHighlight(_ k: SnapBarModel.Key?) {
+        if model.highlight != k { model.highlight = k }
     }
 
     private func configure(_ wa: CGRect) {
@@ -727,8 +748,8 @@ final class SnapBar {
 
     func hide() {
         guard let p = panel, p.isVisible else { return }
-        model.expanded = false
-        model.highlight = nil
+        if model.expanded { model.expanded = false }
+        setHighlight(nil)
         p.orderOut(nil)
     }
 
