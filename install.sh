@@ -33,6 +33,7 @@ cat > "$PLIST" <<EOF
 <plist version="1.0">
 <dict>
   <key>Label</key><string>$LABEL</string>
+  <key>AssociatedBundleIdentifiers</key><array><string>local.fenestra.Fenestra</string></array>
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>

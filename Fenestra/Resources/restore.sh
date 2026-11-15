@@ -89,13 +89,20 @@ if [ "$MODE" = "--uninstall" ]; then
     echo "Removing the Battery saver permission (asks for your Mac password):"
     sudo rm -f /etc/sudoers.d/fenestra
   fi
-  # Keep a copy of this script and the backup outside the deleted folder, just in case.
+  # Wi-Fi password copies Fenestra kept in the login keychain (Settings > Uninstall already removed them; from
+  # Terminal macOS may ask once to allow it).
+  for _ in $(seq 1 200); do
+    security delete-generic-password -s "Fenestra Wi-Fi" >/dev/null 2>&1 || break
+  done
+  # Keep a copy of the original settings outside the deleted folder, just in case; remove Fenestra's logs.
   if [ -d "$SUPPORT" ]; then
     mkdir -p "$HOME/Library/Logs"
     cp "$BACKUP" "$HOME/Library/Logs/Fenestra-defaults-backup.txt" 2>/dev/null
     rm -rf "$SUPPORT"
   fi
+  rm -rf "$HOME/Library/Logs/Fenestra.log" "$HOME/Library/Logs/Fenestra-app.log" "$HOME/Library/Logs/Fenestra-dragtest"
   echo "Fenestra uninstalled. Permissions it was given can be removed in"
   echo "System Settings > Privacy & Security (Accessibility, Screen & System Audio Recording, Location)."
+  echo "If you set up the Focus tile, delete the shortcuts \"Fenestra Focus On\" and \"Fenestra Focus Off\" in Shortcuts."
 fi
 exit 0

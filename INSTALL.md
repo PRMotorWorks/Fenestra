@@ -66,8 +66,13 @@ Applications and choose **Replace**, then open it. Your settings and permissions
 ## Uninstalling
 
 Right-click the taskbar > **Taskbar settings** > **Fenestra** tab > **Uninstall…**. Your Dock, menu bar and every
-macOS setting Fenestra changed go back to how they were, and the app, its login item and its settings are removed.
-Permissions can be removed afterward in System Settings > Privacy & Security.
+macOS setting Fenestra changed go back to how they were, and the app, its login item, its settings, its logs and the
+Wi-Fi passwords it saved are removed. Afterward you can remove its permissions in System Settings > Privacy &
+Security, and, if you set up the Focus tile, the shortcuts "Fenestra Focus On" and "Fenestra Focus Off" in Shortcuts.
+
+Dragged Fenestra to the Trash instead? That works too: at the next login it puts your Mac settings back and removes
+its login item by itself. If you switch Fenestra off in System Settings > General > Login Items instead, your Mac
+settings come back when you quit Fenestra or log out.
 
 ## If something goes wrong
 

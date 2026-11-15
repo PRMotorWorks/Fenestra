@@ -14,6 +14,16 @@ APP="$HOME/Applications/Fenestra.app"
 [ -d "$APP" ] || APP="/Applications/Fenestra.app"
 mkdir -p "$SUPPORT"
 
+# The app was deleted (dragged to the Trash) without Uninstall: put the Mac back, remove this login item and
+# stop, quietly, instead of failing three times as a "crash".
+if [ ! -d "$APP" ]; then
+  "$SUPPORT/restore.sh" --soft
+  rm -f "$HOME/Library/LaunchAgents/local.fenestra.shell.plist"
+  launchctl disable "gui/$(id -u)/local.fenestra.shell" 2>/dev/null
+  echo "app-removed $(date +%s)" > "$STATE"
+  exit 0
+fi
+
 echo "starting $(date +%s)" > "$STATE"
 # `open` launches through LaunchServices, so macOS attributes permissions to Fenestra itself
 # (not to this script). -W waits until the app exits.

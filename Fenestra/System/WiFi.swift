@@ -113,6 +113,15 @@ final class WiFi: NSObject, CWEventDelegate, @unchecked Sendable {
     }
     private static func deleteCopy(_ ssid: String) { SecItemDelete(query(ssid) as CFDictionary) }
 
+    /// Uninstall: removes every Wi-Fi password copy Fenestra kept (all "Fenestra Wi-Fi" items). Returns how many.
+    @discardableResult
+    static func deleteAllCopies() -> Int {
+        var n = 0
+        let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service]
+        while SecItemDelete(q as CFDictionary) == errSecSuccess && n < 200 { n += 1 }
+        return n
+    }
+
     // CWEventDelegate (called on a CoreWLAN thread)
     private func changed() { DispatchQueue.main.async { self.onChange?() } }
     func powerStateDidChangeForWiFiInterface(withName interfaceName: String) { changed() }

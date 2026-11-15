@@ -55,7 +55,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.willPowerOffNotification, object: nil, queue: .main
         ) { _ in
-            MainActor.assumeIsolated { Lifecycle.sessionEnding = true }
+            MainActor.assumeIsolated {
+                Lifecycle.sessionEnding = true
+                // Login item switched off (Login Items > Allow in the Background): nothing will start Fenestra
+                // at the next login, so put the Mac back now instead of leaving the Dock and menu bar hidden.
+                Lifecycle.restoreIfUnsupervised(reason: "logging out")
+            }
         }
     }
 

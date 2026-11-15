@@ -109,6 +109,7 @@ enum Lifecycle {
         <plist version="1.0">
         <dict>
           <key>Label</key><string>\(agentLabel)</string>
+          <key>AssociatedBundleIdentifiers</key><array><string>local.fenestra.Fenestra</string></array>
           <key>ProgramArguments</key>
           <array>
             <string>/bin/bash</string>
@@ -140,6 +141,9 @@ enum Lifecycle {
     /// (restore.sh --uninstall). Runs detached, since stopping the agent ends this process.
     static func uninstall() {
         installScripts()
+        // Wi-Fi password copies live in your login keychain; Fenestra made them, so it can remove them silently.
+        let removed = WiFi.deleteAllCopies()
+        Log.write("uninstall: removed \(removed) Wi-Fi password copies")
         // The Battery saver permission is a root-owned file: remove it here, where macOS can ask for the password.
         if FileManager.default.fileExists(atPath: "/etc/sudoers.d/fenestra") {
             NSAppleScript(source: "do shell script \"/bin/rm -f /etc/sudoers.d/fenestra\" with administrator privileges "
@@ -182,9 +186,22 @@ enum Lifecycle {
         }
     }
 
+    /// Whether the login agent (watchdog) is loaded. Switching Fenestra off in System Settings > Login Items
+    /// unloads it but leaves the app running (tested 2026-11-15), so nothing would restore the Mac afterward.
+    static func agentLoaded() -> Bool {
+        Shell.run("/bin/launchctl", ["print", "gui/\(getuid())/\(agentLabel)"]).status == 0
+    }
+
+    /// Restores the Mac's settings now when no watchdog will (login item switched off, or started from Xcode).
+    static func restoreIfUnsupervised(reason: String) {
+        guard !agentLoaded() else { return }
+        Log.write("lifecycle: login item is off, restoring macOS settings (\(reason))")
+        _ = Shell.run("/bin/bash", [supportDir.appendingPathComponent("restore.sh").path, "--soft"])
+    }
+
     /// Quit Fenestra the normal way: the watchdog then restores the Dock and menu bar.
     static func quitAndRestore() {
-        if !launchedFromAgent {
+        if !launchedFromAgent || !agentLoaded() {
             // Not supervised: restore ourselves.
             _ = Shell.run("/bin/bash", [supportDir.appendingPathComponent("restore.sh").path, "--soft"])
         }
