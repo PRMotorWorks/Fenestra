@@ -53,16 +53,26 @@ struct MouseCatcher: NSViewRepresentable {
             return CGPoint(x: p.x, y: isFlipped ? p.y : bounds.height - p.y)
         }
 
+        /// A hidden taskbar (full screen, auto-hide) stays ordered in, transparent and click-through, and its
+        /// tracking areas still fire: no hover, tooltips or thumbnails from a bar nobody can see.
+        private var isLive: Bool {
+            guard let w = window else { return false }
+            return !w.ignoresMouseEvents && w.alphaValue > 0
+        }
+
         override func mouseEntered(with event: NSEvent) {
+            guard isLive else { return }
             handlers?.onHover?(true, screenRect)
             handlers?.onMove?(topLeftPoint(event), screenRect)
         }
         override func mouseMoved(with event: NSEvent) {
             guard let move = handlers?.onMove else { return super.mouseMoved(with: event) }
+            guard isLive else { return }
             move(topLeftPoint(event), screenRect)
         }
         override func scrollWheel(with event: NSEvent) {
             guard let scroll = handlers?.onScroll else { return super.scrollWheel(with: event) }
+            guard isLive else { return }
             scroll(event, topLeftPoint(event), screenRect)
         }
         override func mouseExited(with event: NSEvent) {

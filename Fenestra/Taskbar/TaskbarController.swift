@@ -57,6 +57,11 @@ final class TaskbarController {
         /// Shows or hides the taskbar without ordering it out: ordering it out and back in (around a full-screen
         /// desktop) tied it to one desktop, so hidden means transparent and click-through.
         func setPanel(shown: Bool) {
+            if !shown && panel.alphaValue > 0 {
+                // A tooltip or thumbnail open over this bar would stay behind on top of the full-screen window.
+                TrayTip.shared.hide()
+                ThumbnailController.shared.dismiss()
+            }
             panel.alphaValue = shown ? 1 : 0
             panel.ignoresMouseEvents = !shown
             if !panel.isVisible { panel.orderFrontRegardless() }
