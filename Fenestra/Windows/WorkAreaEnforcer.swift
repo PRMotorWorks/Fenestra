@@ -13,6 +13,13 @@ final class WorkAreaEnforcer {
     private var flushScheduled = false
     private var lastClamp: [CGWindowID: Date] = [:]
     private var started = false
+    private var lastDoubleClick: TimeInterval = -100
+
+    /// A double-click anywhere (from DragSnap's global click monitor). A title bar double-click runs macOS's Fill
+    /// (`AppleActionOnDoubleClick = Fill`): the window covers the whole display and the taskbar hides, the user's
+    /// choice. Shortening that window here a moment later (the taskbar then came back) made it work only when
+    /// clicked again within the 1 s clamp throttle: about 8 clicks (user report 2026-11-16).
+    func doubleClicked() { lastDoubleClick = ProcessInfo.processInfo.systemUptime }
 
     func start() {
         guard !started else { return }
@@ -66,6 +73,21 @@ final class WorkAreaEnforcer {
         guard f.midX >= screen.frame.minX, f.midX <= screen.frame.maxX,
               f.midY >= screenTop, f.midY <= screenBottom else { return }
         guard f.maxY > taskbarTop + 1 else { return }
+
+        // Right after a double-click: wait for Fill's animation to end, then leave a window that covers the whole
+        // display alone (it counts as full screen and the taskbar hides). Anything else is checked as usual.
+        let sinceDouble = ProcessInfo.processInfo.systemUptime - lastDoubleClick
+        if sinceDouble < 0.5 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + (0.5 - sinceDouble)) {
+                MainActor.assumeIsolated { WorkAreaEnforcer.shared.enqueue(w) }
+            }
+            return
+        }
+        if sinceDouble < 3, f.minX <= screen.frame.minX + 2, f.maxX >= screen.frame.maxX - 2,
+           f.minY <= screenTop + 2, f.maxY >= screenBottom - 2 {
+            Log.write("workarea: window fills the display after a double-click, taskbar hides (not shortened)")
+            return
+        }
 
         // Zoom / Fill / tiling: the window touches the top of the work area, or its bottom edge
         // was resized onto the screen edge. A plain move doesn't trigger this (no resize event).

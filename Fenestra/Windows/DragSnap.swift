@@ -87,6 +87,7 @@ final class DragSnap {
                 let d = DragSnap.shared
                 switch e.type {
                 case .leftMouseDown:
+                    if e.clickCount >= 2 { WorkAreaEnforcer.shared.doubleClicked() }
                     d.lastDown = c
                     d.pressSamples.removeAll(keepingCapacity: true)
                     d.downWindow = AppSettings.shared.snapWindows ? DragSnap.windowAt(c.point, own: d.ownPid) : nil
