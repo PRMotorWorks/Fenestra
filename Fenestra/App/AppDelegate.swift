@@ -16,6 +16,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // One shell at a time.
         if Lifecycle.anotherInstanceIsRunning() { exit(0) }
 
+        if !Lifecycle.launchedFromAgent {
+            // Installed from the disk image: it must run from Applications (the login agent looks there).
+            if Lifecycle.needsMoveToApplications() { Lifecycle.askToMoveToApplications(); exit(0) }
+            // First launch on this Mac: set up the login agent and watchdog (what install.sh does).
+            if !FileManager.default.fileExists(atPath: Lifecycle.agentPlist.path) { Lifecycle.installAgent() }
+        }
         // Opened from Finder: hand over to the login agent so the watchdog supervises us.
         if !Lifecycle.launchedFromAgent, Lifecycle.handOffToAgentIfInstalled() { exit(0) }
 

@@ -255,6 +255,22 @@ struct AboutSettingsView: View {
                     Spacer()
                     Button("Quit and restore Dock") { Lifecycle.quitAndRestore() }
                 }
+                LabeledContent("Version") {
+                    Text((Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "?")
+                }
+                LabeledContent("Remove Fenestra from this Mac") {
+                    Button("Uninstall…") {
+                        let a = NSAlert()
+                        a.messageText = "Uninstall Fenestra?"
+                        a.informativeText = "Your Dock, menu bar and every macOS setting Fenestra changed go back "
+                            + "to how they were, then the app, its login item and its settings are removed. "
+                            + "Permissions you gave it can be removed in System Settings > Privacy & Security."
+                        a.addButton(withTitle: "Uninstall")
+                        a.addButton(withTitle: "Cancel")
+                        a.buttons.first?.hasDestructiveAction = true
+                        if a.runModal() == .alertFirstButtonReturn { Lifecycle.uninstall() }
+                    }
+                }
                 Text(Theme.segoeFamily.map { "Font: \($0) (installed)" } ?? "Font: system font (install Segoe UI Variable to use it)")
                     .foregroundStyle(.secondary)
             }

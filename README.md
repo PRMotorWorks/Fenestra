@@ -40,6 +40,23 @@ cd ~/Documents/Fenestra
 - Signing: your Apple Development certificate (team GTW3QXXPHD), so permissions survive rebuilds.
   macOS may ask once whether `codesign` may use the key: choose **Always Allow**.
 
+### Installing on another Mac (no Xcode)
+
+```bash
+./package.sh          # builds dist/Fenestra-<version>.dmg (app + Applications shortcut + install guide)
+```
+
+Copy the disk image to the other Mac and follow [INSTALL.md](INSTALL.md) (also inside the image as
+"How to install Fenestra.txt"). On first launch from Applications, Fenestra writes its own login agent and copies
+its scripts (what `install.sh` does), then restarts under the watchdog. Opened from the disk image or Downloads it
+asks to be moved to Applications. Settings > Fenestra > Uninstall… runs `restore.sh --uninstall`.
+
+Signing: `package.sh` signs with hardened runtime and `Config/Fenestra-dist.entitlements` (Apple events). With only
+the Apple Development certificate, the other Mac needs System Settings > Privacy & Security > **Open Anyway** once.
+With a **Developer ID Application** certificate (paid Apple Developer Program) it signs with that instead, and
+notarizes and staples when a notarytool profile exists (`xcrun notarytool store-credentials fenestra-notary`):
+the image then opens with no warning on any Mac.
+
 ### How it runs (crash safety)
 
 `~/Library/LaunchAgents/local.fenestra.shell.plist` runs `fenestra-run.sh` (the watchdog) at login.

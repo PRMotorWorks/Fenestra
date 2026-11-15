@@ -76,6 +76,83 @@ enum Lifecycle {
         }
     }
 
+    // MARK: Installing from the disk image (no Xcode needed)
+
+    /// Running from the disk image, or from Downloads through macOS's App Translocation, instead of Applications.
+    static func needsMoveToApplications() -> Bool {
+        let path = Bundle.main.bundlePath
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return !(path.hasPrefix("/Applications/") || path.hasPrefix(home + "/Applications/"))
+    }
+
+    static func askToMoveToApplications() {
+        NSApp.activate()
+        let a = NSAlert()
+        a.messageText = "Move Fenestra to Applications"
+        a.informativeText = "Drag Fenestra into the Applications folder (the disk image shows both), then open it "
+            + "from there. Fenestra starts itself at every login from Applications."
+        a.addButton(withTitle: "Open Applications")
+        a.addButton(withTitle: "Quit")
+        if a.runModal() == .alertFirstButtonReturn {
+            NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications"))
+        }
+    }
+
+    /// Writes the login agent that runs the watchdog (fenestra-run.sh) at every login, like install.sh does.
+    static func installAgent() {
+        installScripts()
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let run = supportDir.appendingPathComponent("fenestra-run.sh").path
+        let plist = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+          <key>Label</key><string>\(agentLabel)</string>
+          <key>ProgramArguments</key>
+          <array>
+            <string>/bin/bash</string>
+            <string>\(run)</string>
+          </array>
+          <key>RunAtLoad</key><true/>
+          <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+          <key>ThrottleInterval</key><integer>5</integer>
+          <key>LimitLoadToSessionType</key><string>Aqua</string>
+          <key>ProcessType</key><string>Interactive</string>
+          <key>StandardOutPath</key><string>\(home)/Library/Logs/Fenestra.log</string>
+          <key>StandardErrorPath</key><string>\(home)/Library/Logs/Fenestra.log</string>
+        </dict>
+        </plist>
+
+        """
+        let fm = FileManager.default
+        try? fm.createDirectory(at: agentPlist.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? fm.createDirectory(atPath: home + "/Library/Logs", withIntermediateDirectories: true)
+        do {
+            try plist.write(to: agentPlist, atomically: true, encoding: .utf8)
+            Log.write("setup: login agent installed (first launch from \(Bundle.main.bundlePath))")
+        } catch {
+            Log.write("setup: could not write the login agent: \(error.localizedDescription)")
+        }
+    }
+
+    /// Settings > Fenestra > Uninstall: restores every macOS setting, then removes the app, login agent and data
+    /// (restore.sh --uninstall). Runs detached, since stopping the agent ends this process.
+    static func uninstall() {
+        installScripts()
+        // The Battery saver permission is a root-owned file: remove it here, where macOS can ask for the password.
+        if FileManager.default.fileExists(atPath: "/etc/sudoers.d/fenestra") {
+            NSAppleScript(source: "do shell script \"/bin/rm -f /etc/sudoers.d/fenestra\" with administrator privileges "
+                          + "with prompt \"Fenestra is removing its Battery saver permission.\"")?.executeAndReturnError(nil)
+        }
+        let script = supportDir.appendingPathComponent("restore.sh").path
+        let log = FileManager.default.homeDirectoryForCurrentUser.path + "/Library/Logs/Fenestra-uninstall.log"
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+        p.arguments = ["-c", "nohup /bin/bash '\(script)' --uninstall > '\(log)' 2>&1 &"]
+        try? p.run()
+    }
+
     // MARK: Scripts
 
     /// Copies the bundled scripts to Application Support so restore.sh works even if the app is deleted.
