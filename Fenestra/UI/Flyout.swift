@@ -1,0 +1,211 @@
+import AppKit
+import SwiftUI
+
+/// Borderless panel used for every Windows-style flyout (Quick Settings, calendar, thumbnails, ...).
+final class FlyoutPanel: NSPanel {
+    /// Lets the Wi-Fi password field take typing. Off for clipboard history: the app you type in keeps focus.
+    var keyable = true
+    override var canBecomeKey: Bool { keyable }
+    override var canBecomeMain: Bool { false }
+}
+
+/// Opens one flyout at a time above the taskbar, with the Windows 11 slide-up (200 ms, ease-out),
+/// and closes it on a click anywhere else or on Escape.
+@MainActor
+final class FlyoutManager {
+    static let shared = FlyoutManager()
+
+    private(set) var currentID: String?
+    private var panel: FlyoutPanel?
+    private var globalMonitor: Any?
+    private var localMonitor: Any?
+    private var keyMonitor: Any?
+    private var ignoreRect: NSRect = .zero
+    private var onClose: (() -> Void)?
+
+    /// Where a flyout opens: above the taskbar (tray, thumbnails) or just below its anchor
+    /// (Snap Layouts under a window's maximize button), on the anchor's display.
+    enum Placement { case aboveTaskbar, below }
+    private var placement: Placement = .aboveTaskbar
+    private var placementScreen: NSScreen?
+
+    func isOpen(_ id: String) -> Bool { currentID == id }
+    /// Screen frame of the open flyout, if any.
+    var panelFrame: NSRect? { panel?.frame }
+
+    /// - Parameters:
+    ///   - anchor: screen rect of the button that opened it (clicks on it toggle instead of reopening).
+    ///   - align: .center places the panel centered over the anchor, .trailing aligns right edges.
+    func toggle<V: View>(id: String, anchor: NSRect, align: HorizontalAlignment = .trailing,
+                         gap: CGFloat = 12, @ViewBuilder content: () -> V) {
+        if currentID == id { close(); return }
+        show(id: id, anchor: anchor, align: align, gap: gap, content: content)
+    }
+
+    func show<V: View>(id: String, anchor: NSRect, align: HorizontalAlignment = .trailing,
+                       gap: CGFloat = 12, placement: Placement = .aboveTaskbar, keyable: Bool = true,
+                       onClose: (() -> Void)? = nil, @ViewBuilder content: () -> V) {
+        close(animated: false)
+        currentID = id
+        self.onClose = onClose
+        ignoreRect = anchor
+        self.placement = placement
+
+        currentAlign = align
+        let host = FirstClickHostingView(rootView: FlyoutChrome(content: content()))
+        // Measure with the default sizing options (fittingSize is 0 x 0 without them), then stop SwiftUI
+        // from resizing the window itself: AppKit would keep the top edge fixed and grow it downward behind
+        // the taskbar. contentSizeChanged() resizes it from the bottom instead.
+        host.layoutSubtreeIfNeeded()
+        var size = host.fittingSize
+        if size.width < 1 || size.height < 1 { size = host.intrinsicContentSize }
+        host.sizingOptions = []
+        host.roundCorners(8)
+
+        let screen: NSScreen
+        if placement == .below {
+            screen = NSScreen.screens.first { $0.frame.contains(NSPoint(x: anchor.midX, y: anchor.midY)) }
+                ?? NSScreen.screens[0]
+        } else {
+            // Phase 5: above the taskbar the anchor belongs to (main or a secondary display's).
+            screen = TaskbarController.shared.screen(for: NSPoint(x: anchor.midX, y: anchor.midY))
+        }
+        placementScreen = screen
+        var x: CGFloat
+        switch align {
+        case .center: x = anchor.midX - size.width / 2
+        case .leading: x = anchor.minX
+        default: x = anchor.maxX - size.width
+        }
+        let margin: CGFloat = placement == .below ? 4 : 12
+        x = min(max(x, screen.frame.minX + margin), screen.frame.maxX - size.width - margin)
+        let y: CGFloat
+        if placement == .below {
+            // Under the anchor; flipped above it only when the window sits at the very bottom of the screen.
+            let below = anchor.minY - gap - size.height
+            y = below >= screen.visibleFrame.minY ? below : anchor.maxY + gap
+        } else {
+            y = screen.frame.minY + Theme.taskbarHeight + gap
+        }
+        let finalFrame = NSRect(x: x, y: y, width: size.width, height: size.height)
+        let slide: CGFloat = placement == .below ? 8 : -24
+
+        let p = FlyoutPanel(contentRect: finalFrame, styleMask: [.borderless, .nonactivatingPanel],
+                            backing: .buffered, defer: false)
+        p.keyable = keyable
+        p.level = .statusBar
+        p.isOpaque = false
+        p.backgroundColor = .clear
+        p.hasShadow = true
+        p.collectionBehavior = [.canJoinAllSpaces, .transient, .ignoresCycle]
+        p.contentView = host
+        ArrowCursor.install(on: host)
+        p.alphaValue = 0
+        p.setFrame(finalFrame.offsetBy(dx: 0, dy: slide), display: false)
+        p.orderFrontRegardless()
+        DispatchQueue.main.async { p.invalidateShadow() }
+        panel = p
+
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.2
+            ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.1, 0.9, 0.2, 1)   // Windows "decelerate"
+            p.animator().alphaValue = 1
+            p.animator().setFrame(finalFrame, display: true)
+        }
+        openedAt = CACurrentMediaTime()
+        installMonitors()
+    }
+
+    private var currentAlign: HorizontalAlignment = .trailing
+
+    /// Called by FlyoutChrome whenever its content's natural size changes (e.g. opening the Wi-Fi list).
+    /// The bottom edge stays just above the taskbar and the panel grows upward, as on Windows.
+    func contentSizeChanged(_ size: CGSize) {
+        guard let p = panel, size.width > 0, size.height > 0 else { return }
+        let old = p.frame
+        guard abs(old.width - size.width) > 0.5 || abs(old.height - size.height) > 0.5 else { return }
+        var x: CGFloat
+        switch currentAlign {
+        case .center: x = old.midX - size.width / 2
+        case .leading: x = old.minX
+        default: x = old.maxX - size.width
+        }
+        let screen = placementScreen ?? TaskbarController.shared.screen ?? NSScreen.screens[0]
+        x = min(max(x, screen.frame.minX + 12), screen.frame.maxX - size.width - 12)
+        let maxH = screen.frame.height - Theme.taskbarHeight - 24
+        let h = min(size.height, maxH)
+        let y = placement == .below ? old.maxY - h : old.minY      // below: the top edge stays put
+        let frame = NSRect(x: x, y: y, width: size.width, height: h)
+        // Opening a sub-page (Wi-Fi list, Bluetooth) resizes in 0.2 s like Windows instead of jumping;
+        // during the open animation the size just follows.
+        guard CACurrentMediaTime() - openedAt > 0.25 else { p.setFrame(frame, display: true); p.invalidateShadow(); return }
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.2
+            ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.1, 0.9, 0.2, 1)
+            p.animator().setFrame(frame, display: true)
+        }, completionHandler: { p.invalidateShadow() })
+    }
+    private var openedAt: CFTimeInterval = 0
+
+    func makeKey() { panel?.makeKey() }
+
+    func close(animated: Bool = true) {
+        removeMonitors()
+        currentID = nil
+        if let done = onClose { onClose = nil; done() }
+        guard let p = panel else { return }
+        panel = nil
+        guard animated else { p.orderOut(nil); return }
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.12
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            p.animator().alphaValue = 0
+            p.animator().setFrame(p.frame.offsetBy(dx: 0, dy: placement == .below ? 6 : -12), display: true)
+        }, completionHandler: { p.orderOut(nil) })
+    }
+
+    private func installMonitors() {
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { _ in
+            MainActor.assumeIsolated { FlyoutManager.shared.close() }
+        }
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { e in
+            MainActor.assumeIsolated {
+                let m = FlyoutManager.shared
+                let loc = NSEvent.mouseLocation
+                if let p = m.panel, p.frame.contains(loc) { return }
+                if m.ignoreRect.contains(loc) { return }       // the opening button toggles it itself
+                m.close()
+            }
+            return e
+        }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { e in
+            if e.keyCode == 53 { MainActor.assumeIsolated { FlyoutManager.shared.close() }; return nil }
+            return e
+        }
+    }
+
+    private func removeMonitors() {
+        [globalMonitor, localMonitor, keyMonitor].compactMap { $0 }.forEach(NSEvent.removeMonitor)
+        globalMonitor = nil; localMonitor = nil; keyMonitor = nil
+    }
+}
+
+/// Acrylic background, 8 px corners and hairline border shared by all flyouts.
+struct FlyoutChrome<Content: View>: View {
+    @Environment(\.colorScheme) private var scheme
+    let content: Content
+    var body: some View {
+        content
+            .background(Theme.flyoutTint(scheme))
+            .background(VisualEffect(material: .hudWindow, cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Theme.border(scheme), lineWidth: 1))
+            .foregroundStyle(Theme.text(scheme))
+            .font(Theme.font(13))
+            .fixedSize()
+            .onGeometryChange(for: CGSize.self, of: { $0.size }) { size in
+                FlyoutManager.shared.contentSizeChanged(size)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+    }
+}
