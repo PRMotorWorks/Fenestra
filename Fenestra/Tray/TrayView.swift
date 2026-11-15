@@ -26,8 +26,15 @@ struct TrayView: View {
                 FlyoutManager.shared.toggle(id: "overflow", anchor: rect, align: .center) { OverflowFlyout() }
             }) {
                 Image(systemName: "chevron.up").font(.system(size: 11, weight: .semibold))
+                    .modifier(ClockwiseTurn(open: overflowOpen))
             }
             .help("Show hidden icons")
+            .onReceive(NotificationCenter.default.publisher(for: FlyoutManager.didShow)) { n in
+                if n.object as? String == "overflow" { overflowOpen = true }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: FlyoutManager.didClose)) { n in
+                if n.object as? String == "overflow" { overflowOpen = false }
+            }
 
             // Phase 6: menu bar icons switched on under "Other system tray icons".
             ForEach(extras.items.filter { settings.trayPinned.contains($0.id) }) { e in
@@ -87,6 +94,7 @@ struct TrayView: View {
     }
 
     @State private var iconFrames: [TrayTip.Kind: CGRect] = [:]
+    @State private var overflowOpen = false
 
     /// The Quick Settings icon nearest the pointer (x from the button's left edge).
     private func trayIcon(at x: CGFloat) -> TrayTip.Kind? {
@@ -168,6 +176,21 @@ struct BatteryIcon: View {
                 }
             }
             .compositingGroup()
+    }
+}
+
+/// A chevron that turns half a turn clockwise when its flyout or list opens, and another half turn clockwise
+/// (not back) when it closes: the ^ for hidden icons and the Wi-Fi tile's arrow.
+struct ClockwiseTurn: ViewModifier {
+    let open: Bool
+    @State private var angle: Double?
+    func body(content: Content) -> some View {
+        content
+            .rotationEffect(.degrees(angle ?? (open ? 180 : 0)))
+            .onChange(of: open) {
+                let start = angle ?? (open ? 0 : 180)
+                withAnimation(.easeInOut(duration: 0.25)) { angle = start + 180 }
+            }
     }
 }
 

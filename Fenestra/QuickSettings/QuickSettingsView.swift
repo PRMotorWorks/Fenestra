@@ -182,7 +182,7 @@ struct QSTile: View {
     let action: () -> Void
     var more: (() -> Void)? = nil
     var moreSymbol = "chevron.right"
-    /// A down chevron that opens something in place turns to point up while it's open, and back down on closing.
+    /// A down chevron that opens something in place turns clockwise to point up while it's open, and on round the same way on closing.
     var moreOpen = false
     var moreHelp: String? = nil
     @Environment(\.colorScheme) private var scheme
@@ -206,8 +206,7 @@ struct QSTile: View {
                 if let more {
                     Rectangle().fill(on ? Color.black.opacity(0.15) : Theme.border(scheme)).frame(width: 1)
                     Image(systemName: moreSymbol).font(.system(size: 10, weight: .semibold))
-                        .rotationEffect(.degrees(moreOpen ? 180 : 0))
-                        .animation(.spring(duration: 0.35, bounce: 0.3), value: moreOpen)
+                        .modifier(ClockwiseTurn(open: moreOpen))
                         .frame(width: 32).frame(maxHeight: .infinity)
                         .background(bg(hoverMore))
                         .contentShape(Rectangle())

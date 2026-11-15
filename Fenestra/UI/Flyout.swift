@@ -131,6 +131,8 @@ final class FlyoutManager {
 
     /// Posted with the flyout's id as the object when it opens (a prepared view refreshes its state then).
     static let didShow = Notification.Name("FlyoutManager.didShow")
+    /// Posted with the flyout's id however it closes (its button, a click elsewhere, Escape, another flyout).
+    static let didClose = Notification.Name("FlyoutManager.didClose")
 
     // MARK: Building panels, and flyouts prepared ahead of time
 
@@ -239,6 +241,7 @@ final class FlyoutManager {
     func close(animated: Bool = true) {
         removeMonitors()
         if let id = currentID, builders[id] != nil { schedulePrepare(id, after: 0.5) }
+        if let id = currentID { NotificationCenter.default.post(name: FlyoutManager.didClose, object: id) }
         currentID = nil
         token = nil
         if let done = onClose { onClose = nil; done() }
