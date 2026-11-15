@@ -20,6 +20,12 @@ final class DragSnap {
         var size: CGSize
         var resized = false
         var ignoreResizeUntil = Date.distantPast
+        // One log line per drag (user report 2026-11-15, quick drags not snapping): how it ended.
+        var started = Date()
+        var events = 0
+        var last: CGPoint = .zero
+        /// Recent pointer positions with their event time (ns), for throws.
+        var samples: [(point: CGPoint, time: UInt64)] = []
     }
 
     struct Zone: Equatable {
@@ -53,9 +59,51 @@ final class DragSnap {
     /// How close to a corner (along the edge) gives a quarter instead of a half.
     private let corner: CGFloat = 64
 
+    /// Last left-button press and release in other apps (AX coordinates, uptime), for quick flicks: macOS reports
+    /// window moves in batches about every 0.1 s, so a window flicked to an edge and released faster than that
+    /// reports its first move after the release (user report 2026-11-15: quick drags didn't snap).
+    private struct Click { let point: CGPoint; let time: TimeInterval }
+    private var lastDown: Click?
+    private var lastUp: Click?
+    private var handledUp: TimeInterval = 0
+    private var clickMonitor: Any?
+    /// Pointer positions while the left button is held and moving, from the moment it was pressed (the last 32).
+    /// Only drag events reach this, so it costs nothing while you aren't dragging. Lets a drag whose first window
+    /// move arrives late (after a few idle seconds macOS reports it after the release) still be judged as a throw.
+    private var pressSamples: [(point: CGPoint, time: UInt64)] = []
+    /// The window under the pointer when the button went down (window list, no Accessibility round trip), and
+    /// when a drag was last handled. After a few idle seconds an app may report its window's move seconds late,
+    /// or not before the next one: the release itself then checks whether that window moved with the pointer.
+    private var downWindow: (id: CGWindowID, pid: pid_t, bounds: CGRect)?
+    private var handledAt: TimeInterval = 0
+
     func start() {
         guard !started, WindowEvents.shared.isRunning else { return }
         started = true
+        clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp, .leftMouseDragged]) { e in
+            let p = e.locationInWindow              // global events: screen coordinates at the time of the event
+            let c = Click(point: CGPoint(x: p.x, y: CaptionController.primaryHeight - p.y), time: e.timestamp)
+            MainActor.assumeIsolated {
+                let d = DragSnap.shared
+                switch e.type {
+                case .leftMouseDown:
+                    d.lastDown = c
+                    d.pressSamples.removeAll(keepingCapacity: true)
+                    d.downWindow = AppSettings.shared.snapWindows ? DragSnap.windowAt(c.point, own: d.ownPid) : nil
+                case .leftMouseUp:
+                    d.lastUp = c
+                    if d.downWindow != nil {
+                        // After the normal drag handling and the late-report rescue had their chance.
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                            MainActor.assumeIsolated { DragSnap.shared.releaseCheck(c) }
+                        }
+                    }
+                default:
+                    d.pressSamples.append((c.point, UInt64(e.timestamp * 1e9)))
+                    if d.pressSamples.count > 32 { d.pressSamples.removeFirst() }
+                }
+            }
+        }
         WindowEvents.shared.subscribe { kind, pid, el in
             switch kind {
             case .moved: DragSnap.shared.moved(pid, el)
@@ -68,8 +116,9 @@ final class DragSnap {
     // MARK: Drag recognition
 
     private func moved(_ pid: pid_t, _ el: AXUIElement) {
-        guard session == nil, pid != ownPid, AppSettings.shared.snapWindows,
-              NSEvent.pressedMouseButtons & 1 != 0,
+        guard session == nil, pid != ownPid, AppSettings.shared.snapWindows else { return }
+        guard NSEvent.pressedMouseButtons & 1 != 0 else { quickDrag(pid, el); return }
+        guard
               (AX.attr(el, kAXSubroleAttribute) as String?) == kAXStandardWindowSubrole,
               AX.isSettable(el, kAXSizeAttribute),
               let id = AX.windowID(el), let f = AX.frame(el) else { return }
@@ -80,9 +129,199 @@ final class DragSnap {
         guard dy >= 4, dy <= 100, m.x - f.minX >= 6, f.maxX - m.x >= 6 else { return }
         SnapAssist.shared.dismiss()
         var s = Session(target: .init(pid: pid, element: el, id: id), size: f.size)
+        s.samples = Array(pressSamples.suffix(16))     // movement before the late first window move
         restoreSizeForDrag(&s, f)
         session = s
         enableTap()
+    }
+
+    /// The first move of a window arrived after the button was already released: a quick flick. If it was dragged by
+    /// its title bar and released at a screen edge or corner, snap it there (no preview: it's over already).
+    private func quickDrag(_ pid: pid_t, _ el: AXUIElement) {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard let up = lastUp, let down = lastDown, down.time < up.time, up.time != handledUp,
+              now - up.time < 1.0, up.time - down.time < 1.5,
+              hypot(up.point.x - down.point.x, up.point.y - down.point.y) > 30,
+              (AX.attr(el, kAXSubroleAttribute) as String?) == kAXStandardWindowSubrole,
+              AX.isSettable(el, kAXSizeAttribute),
+              let id = AX.windowID(el), let f = AX.frame(el) else { return }
+        if let e = lastEnded, e.id == id, now - e.time < 1.0 { return }      // its drag session handled it
+        // Grabbed by the title bar: the release point sits in the top band of where the window ended up.
+        let dy = up.point.y - f.minY
+        guard dy >= 4, dy <= 100, up.point.x - f.minX >= 6, f.maxX - up.point.x >= 6 else { return }
+        handledUp = up.time
+        handledAt = now
+        let ms = Int((now - up.time) * 1000)
+        var note = "released at the edge"
+        var zone = edgeZone(at: up.point)
+        if zone == nil, AppSettings.shared.snapThrow, let m = magnetZone(up.point) {
+            zone = m
+            note = "\(Int(topMagnet)) pt top magnet"
+        } else if zone == nil, AppSettings.shared.snapThrow, let t = throwZone(pressSamples) {
+            zone = t.zone
+            note = t.note
+        }
+        guard let z = zone else {
+            Log.write("drag: \(id) first move came \(ms) ms after the release at \(Int(up.point.x)),\(Int(up.point.y)), "
+                      + "no zone (\(throwMiss))")
+            return
+        }
+        Log.write("snap (drag): quick drag of \(id), first move came \(ms) ms after the release (\(note))")
+        WindowSnap.shared.snap(.init(pid: pid, element: el, id: id), zone: z.unit, workArea: z.workArea,
+                               layout: z.layout, source: "quick drag")
+    }
+
+    /// CGEvent timestamps are documented as nanoseconds but are mach ticks on some Macs (24 MHz on Apple silicon):
+    /// whichever clock the value is closer to now decides, and ticks are converted.
+    nonisolated static func nanos(_ ts: UInt64) -> UInt64 {
+        let ticks = mach_absolute_time(), ns = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
+        let dTicks = ts > ticks ? ts - ticks : ticks - ts
+        let dNs = ts > ns ? ts - ns : ns - ts
+        guard dTicks < dNs else { return ts }
+        var tb = mach_timebase_info_data_t()
+        mach_timebase_info(&tb)
+        return ts &* UInt64(tb.numer) / UInt64(max(tb.denom, 1))
+    }
+
+    /// Quick snap top magnet: letting go within `topMagnet` below the top of a display counts as touching it, at
+    /// any speed (the menu bar is hidden there). Thresholds: `QuickSnap.Tuning`.
+    private func magnetZone(_ p: CGPoint) -> Zone? {
+        guard let screen = NSScreen.screens.first(where: { CaptionController.axRect($0.frame).contains(p) }) else {
+            return nil
+        }
+        let sf = CaptionController.axRect(screen.frame)
+        guard p.y - sf.minY <= topMagnet else { return nil }
+        return edgeZone(at: CGPoint(x: p.x, y: sf.minY))
+    }
+    /// Quick snap thresholds from Settings (Normal: misses were released 260 to 450 pt short at 2000+ pt/s, or
+    /// slowed to 900 to 1100 pt/s 81 to 99 pt short, or stopped 24 to 37 pt below the top).
+    private var tune: QuickSnap.Tuning { AppSettings.shared.quickSnap.tuning }
+    private var throwAhead: Double { tune.throwAhead }
+    private var throwReach: CGFloat { tune.throwReach }
+    private var throwSpeed: CGFloat { tune.throwSpeed }
+    private var nearEdge: CGFloat { tune.nearEdge }
+    private var nearSpeed: CGFloat { tune.nearSpeed }
+    private var nearTravel: CGFloat { tune.nearTravel }
+    private var topMagnet: CGFloat { tune.topMagnet }
+    /// Why the last throw check found nothing (for the drag log line).
+    private var throwMiss = ""
+    /// The window whose drag session just ended, and when (uptime): the rescue skips it.
+    private var lastEnded: (id: CGWindowID, time: TimeInterval)?
+
+    /// Where a window released mid-drag was heading: the pointer's speed over the last 0.1 s, followed for up to
+    /// 0.3 s (at most 600 pt). If that reaches an outer edge of the same display, the zone there. Windows has no
+    /// throw; the user asked for it (2026-11-15) because fast drags were released just short of the edge.
+    private func throwZone(_ samples: [(point: CGPoint, time: UInt64)]) -> (zone: Zone, note: String)? {
+        throwMiss = "no pointer samples"
+        guard let b = samples.last else { return nil }
+        let recent = samples.filter { b.time &- $0.time <= 100_000_000 && $0.time <= b.time }
+        throwMiss = "\(recent.count) recent samples"
+        guard recent.count >= 3, let a = recent.first else { return nil }
+        let dt = Double(b.time &- a.time) / 1e9
+        guard dt >= 0.015 else { return nil }
+        let vx = (b.point.x - a.point.x) / dt, vy = (b.point.y - a.point.y) / dt
+        let speed = hypot(vx, vy)
+        throwMiss = "moving \(Int(vx)),\(Int(vy)) pt/s"
+        guard let screen = NSScreen.screens.first(where: { CaptionController.axRect($0.frame).contains(b.point) })
+        else { return nil }
+        let sf = CaptionController.axRect(screen.frame)
+        // Close call: near an outer edge and still heading for it, or having come toward it over the last
+        // 0.25 s (throws slow down or veer sideways in the last instant: misses at 66 to 115 pt short).
+        let span = samples.filter { b.time &- $0.time <= 250_000_000 && $0.time <= b.time }
+        let o = span.first?.point ?? b.point
+        let up = o.y - b.point.y, left = o.x - b.point.x, right = b.point.x - o.x
+        var close: [(d: CGFloat, point: CGPoint)] = []
+        if -vy >= nearSpeed || up >= nearTravel { close.append((b.point.y - sf.minY, CGPoint(x: b.point.x, y: sf.minY))) }
+        if -vx >= nearSpeed || left >= nearTravel { close.append((b.point.x - sf.minX, CGPoint(x: sf.minX, y: b.point.y))) }
+        if vx >= nearSpeed || right >= nearTravel { close.append((sf.maxX - 1 - b.point.x, CGPoint(x: sf.maxX - 1, y: b.point.y))) }
+        for c in close.filter({ $0.d >= 0 && $0.d <= nearEdge }).sorted(by: { $0.d < $1.d }) {
+            if let z = edgeZone(at: c.point) {
+                return (z, "let go \(Int(c.d)) pt short of the edge, moving \(Int(speed)) pt/s, "
+                        + "\(Int(up)) pt up in 0.25 s")
+            }
+        }
+        guard speed >= throwSpeed else { return nil }
+        // Time until the path meets each edge it is heading to; the first one wins.
+        var hits: [(t: Double, point: CGPoint)] = []
+        if vx < 0 { let t = (sf.minX - b.point.x) / vx; hits.append((t, CGPoint(x: sf.minX, y: b.point.y + vy * t))) }
+        if vx > 0 { let t = (sf.maxX - 1 - b.point.x) / vx; hits.append((t, CGPoint(x: sf.maxX - 1, y: b.point.y + vy * t))) }
+        if vy < 0 { let t = (sf.minY - b.point.y) / vy; hits.append((t, CGPoint(x: b.point.x + vx * t, y: sf.minY))) }
+        guard let hit = hits.filter({ $0.t >= 0 }).min(by: { $0.t < $1.t }) else { return nil }
+        throwMiss += ", edge \(Int(speed * hit.t)) pt / \(Int(hit.t * 1000)) ms ahead"
+        guard hit.t <= throwAhead, speed * hit.t <= throwReach else { return nil }
+        let p = CGPoint(x: min(max(hit.point.x, sf.minX), sf.maxX - 1), y: min(max(hit.point.y, sf.minY), sf.maxY - 1))
+        guard let z = edgeZone(at: p) else { return nil }
+        return (z, "thrown at \(Int(speed)) pt/s, \(Int(speed * hit.t)) pt short of the edge")
+    }
+
+    /// Frontmost normal window of another app under `p` (AX coordinates), from the window list.
+    nonisolated static func windowAt(_ p: CGPoint, own: pid_t) -> (id: CGWindowID, pid: pid_t, bounds: CGRect)? {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+                as? [[String: Any]] else { return nil }
+        for w in list where (w[kCGWindowLayer as String] as? Int) == 0 {
+            guard let pid = w[kCGWindowOwnerPID as String] as? pid_t, pid != own,
+                  let id = w[kCGWindowNumber as String] as? CGWindowID,
+                  let bd = w[kCGWindowBounds as String] as? NSDictionary,
+                  let b = CGRect(dictionaryRepresentation: bd), b.width > 100, b.height > 60, b.contains(p) else { continue }
+            return (id, pid, b)
+        }
+        return nil
+    }
+
+    /// 0.15 s after a release no drag handling picked up: did the window under the press move with the pointer
+    /// (a title bar drag whose move macOS hasn't reported)? Then the same edge, magnet and throw rules apply.
+    private func releaseCheck(_ up: Click) {
+        guard let dw = downWindow, let down = lastDown, AppSettings.shared.snapWindows,
+              handledAt < up.time - 0.05, session == nil else { return }
+        downWindow = nil
+        let delta = CGPoint(x: up.point.x - down.point.x, y: up.point.y - down.point.y)
+        let grab = down.point.y - dw.bounds.minY
+        guard hypot(delta.x, delta.y) > 30, grab >= 4, grab <= 100,
+              let info = (CGWindowListCopyWindowInfo([.optionIncludingWindow], dw.id) as? [[String: Any]])?.first,
+              let bd = info[kCGWindowBounds as String] as? NSDictionary,
+              let now = CGRect(dictionaryRepresentation: bd) else { return }
+        let moved = CGPoint(x: now.minX - dw.bounds.minX, y: now.minY - dw.bounds.minY)
+        // Moved with the pointer (allowing for the menu bar and edges holding it back a little).
+        guard abs(moved.x - delta.x) < 60, abs(moved.y - delta.y) < 60 else { return }
+        var note = "released at the edge"
+        var zone = edgeZone(at: up.point)
+        if zone == nil, AppSettings.shared.snapThrow {
+            if let m = magnetZone(up.point) { zone = m; note = "\(Int(topMagnet)) pt top magnet" }
+            else if let t = throwZone(pressSamples) { zone = t.zone; note = t.note }
+        }
+        guard let z = zone else { return }
+        guard let el = AX.windows(dw.pid).first(where: { AX.windowID($0) == dw.id }),
+              (AX.attr(el, kAXSubroleAttribute) as String?) == kAXStandardWindowSubrole,
+              AX.isSettable(el, kAXSizeAttribute) else { return }
+        handledAt = ProcessInfo.processInfo.systemUptime
+        Log.write("snap (drag): \(dw.id) caught at the release, its move not reported yet (\(note))")
+        WindowSnap.shared.snap(.init(pid: dw.pid, element: el, id: dw.id), zone: z.unit, workArea: z.workArea,
+                               layout: z.layout, source: "release")
+    }
+
+    /// The zone for a release at `p`: a screen edge or corner the pointer touches. Edges shared with another display
+    /// need a rest there, which a quick flick doesn't have, so they don't count here.
+    private func edgeZone(at p: CGPoint) -> Zone? {
+        guard let screen = NSScreen.screens.first(where: { CaptionController.axRect($0.frame).contains(p) }) else {
+            return nil
+        }
+        let sf = CaptionController.axRect(screen.frame)
+        let wa = CaptionController.workArea(screen: screen)
+        let Z = WindowSnap.Zones.self
+        func outer(_ d: CGFloat, _ e: Edge) -> Bool { d <= edge && !edgeShared(screen, e, at: p) }
+        var unit: CGRect?
+        if outer(p.x - sf.minX, .left) || outer(sf.maxX - 1 - p.x, .right) {
+            let left = p.x - sf.minX < sf.maxX - p.x
+            if p.y - sf.minY < corner { unit = left ? Z.topLeft : Z.topRight }
+            else if sf.maxY - p.y < corner { unit = left ? Z.bottomLeft : Z.bottomRight }
+            else { unit = left ? Z.left : Z.right }
+        } else if outer(p.y - sf.minY, .top) {
+            if p.x - sf.minX < corner { unit = Z.topLeft }
+            else if sf.maxX - p.x < corner { unit = Z.topRight }
+            else { unit = Z.full }
+        }
+        guard let unit else { return nil }
+        return Zone(unit: unit, workArea: wa, layout: Z.layout(for: unit))
     }
 
     /// A size change during the drag means it's a resize from the top or left edge, not a move.
@@ -128,8 +367,9 @@ final class DragSnap {
                 MainActor.assumeIsolated {
                     let d = DragSnap.shared
                     switch type {
-                    case .leftMouseDragged: d.dragged(to: loc)
-                    case .leftMouseUp: DispatchQueue.main.async { MainActor.assumeIsolated { d.mouseUp() } }
+                    case .leftMouseDragged: d.dragged(to: loc, time: DragSnap.nanos(event.timestamp))
+                    case .leftMouseUp:
+                        DispatchQueue.main.async { MainActor.assumeIsolated { d.mouseUp(source: "release") } }
                     case .tapDisabledByTimeout, .tapDisabledByUserInput:
                         if d.session != nil, let t = d.tap { CGEvent.tapEnable(tap: t, enable: true) }
                     default: break
@@ -150,7 +390,9 @@ final class DragSnap {
         upTimer?.invalidate()
         // Backstop in case the release never reaches the tap.
         upTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { _ in
-            MainActor.assumeIsolated { if NSEvent.pressedMouseButtons & 1 == 0 { DragSnap.shared.mouseUp() } }
+            MainActor.assumeIsolated {
+                if NSEvent.pressedMouseButtons & 1 == 0 { DragSnap.shared.mouseUp(source: "button found released") }
+            }
         }
         dragged(to: Self.mouse())
     }
@@ -161,22 +403,53 @@ final class DragSnap {
         upTimer = nil
     }
 
-    private func dragged(to p: CGPoint) {
-        guard let s = session else { stopTap(); return }
+    private func dragged(to p: CGPoint, time: UInt64? = nil) {
+        guard var s = session else { stopTap(); return }
+        s.events += 1
+        s.last = p
+        if let time {
+            s.samples.append((p, time))
+            if s.samples.count > 16 { s.samples.removeFirst(s.samples.count - 16) }
+        }
+        session = s
         guard !s.resized else { return }
         evaluate(p)
     }
 
-    private func mouseUp() {
+    private func mouseUp(source: String = "?") {
+        guard let s = session else { stopTap(); return }
+        let held = NSEvent.pressedMouseButtons & 1 != 0
+        if held {
+            Log.write("drag: \(s.target.id) release signal (\(source)) while the button is still held, ignored")
+            return
+        }
         stopTap()
-        guard let s = session else { return }
         session = nil
-        let z = zone
+        var z = zone
         zone = nil
+        // Released short of an edge while moving fast toward it: snap as if it got there.
+        var thrown: String?
+        if z == nil, !s.resized, AppSettings.shared.snapThrow {
+            if let m = magnetZone(Self.mouse()) {
+                z = m
+                thrown = "let go \(Int(Self.mouse().y)) pt from the top (\(Int(topMagnet)) pt magnet)"
+            } else if let t = throwZone(s.samples) {
+                z = t.zone
+                thrown = t.note
+            }
+        }
         pending = nil
         pendingTimer?.invalidate()
         preview.hide()
         bar.hide()
+        let ms = Int(Date().timeIntervalSince(s.started) * 1000)
+        Log.write("drag: \(s.target.id) ended (\(source)) after \(ms) ms, \(s.events) pointer updates, last at "
+                  + "\(Int(s.last.x)),\(Int(s.last.y)), up at \(Int(Self.mouse().x)),\(Int(Self.mouse().y)), "
+                  + (s.resized ? "resize" : z.map { "zone \(CaptionController.describe($0.unit))" } ?? "no zone")
+                  + (thrown.map { " (\($0))" } ?? (z == nil && !s.resized ? " (\(throwMiss))" : "")))
+        // The late-report rescue (quickDrag) must not handle this release a second time.
+        lastEnded = (s.target.id, ProcessInfo.processInfo.systemUptime)
+        handledAt = ProcessInfo.processInfo.systemUptime
         guard let z, !s.resized else { return }
         // Let the window server finish the drag before moving the window.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) {

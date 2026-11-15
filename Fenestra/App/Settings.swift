@@ -172,6 +172,9 @@ final class AppSettings: ObservableObject {
     /// Phase 4: Settings > System > Multitasking > Snap windows (master switch: edge drags and Control+Option+arrows).
     @Published var snapWindows: Bool { didSet { d.set(snapWindows, forKey: "snapWindows"); HotKeys.shared.configure() } }
     @Published var snapBarOnDrag: Bool { didSet { d.set(snapBarOnDrag, forKey: "snapBarOnDrag") } }
+    /// Quick snap: how readily a drag let go short of an outer screen edge snaps there (not in Windows).
+    @Published var quickSnap: QuickSnap { didSet { d.set(quickSnap.rawValue, forKey: "quickSnap") } }
+    var snapThrow: Bool { quickSnap != .off }
     @Published var snapAssist: Bool { didSet { d.set(snapAssist, forKey: "snapAssist") } }
     /// Option+Tab window switcher (Alt+Tab). Off: Option+Tab reaches apps again.
     @Published var altTab: Bool { didSet { d.set(altTab, forKey: "altTab"); HotKeys.shared.configure() } }
@@ -243,6 +246,9 @@ final class AppSettings: ObservableObject {
         snapWindows = bool("snapWindows", true)
         snapBarOnDrag = bool("snapBarOnDrag", true)
         snapAssist = bool("snapAssist", true)
+        // Replaces the earlier on/off "snapThrow" switch (off stays off).
+        quickSnap = QuickSnap(rawValue: d.string(forKey: "quickSnap") ?? "")
+            ?? (bool("snapThrow", true) ? .normal : .off)
         altTab = bool("altTab", true)
         taskbarAllDisplays = bool("taskbarAllDisplays", true)
         taskbarAppsOn = TaskbarAppsOn(rawValue: d.string(forKey: "taskbarAppsOn") ?? "") ?? .all
@@ -321,6 +327,42 @@ enum MacOSChange: String, CaseIterable, Identifiable {
         case .tiling: "Turn off macOS window tiling (it reacts to the same drags as Fenestra's snapping)"
         case .wallpaper: "Clicking the wallpaper doesn't hide your windows"
         case .minimize: "Minimize with the Scale effect instead of Genie"
+        }
+    }
+}
+
+/// Quick snap levels (Settings > Windows > Snap windows). Off: only touching the edge snaps, as on Windows.
+enum QuickSnap: String, CaseIterable, Identifiable {
+    case off, gentle, normal, strong
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .off: "Off (touch the edge, like Windows)"
+        case .gentle: "Gentle"
+        case .normal: "Normal"
+        case .strong: "Strong"
+        }
+    }
+    /// Thresholds for DragSnap. Normal is what the user tuned on 2026-11-15.
+    struct Tuning {
+        let topMagnet: CGFloat        // letting go this close below the top counts as touching it
+        let nearEdge: CGFloat         // close call: this near an outer edge ...
+        let nearSpeed: CGFloat        // ... still moving toward it this fast (pt/s) ...
+        let nearTravel: CGFloat       // ... or having moved this far toward it in the last 0.25 s
+        let throwSpeed: CGFloat       // throw: at least this fast (pt/s) ...
+        let throwAhead: Double        // ... reaching the edge within this time (s) ...
+        let throwReach: CGFloat       // ... and this distance (pt)
+    }
+    var tuning: Tuning {
+        switch self {
+        case .off: Tuning(topMagnet: 0, nearEdge: 0, nearSpeed: .infinity, nearTravel: .infinity,
+                          throwSpeed: .infinity, throwAhead: 0, throwReach: 0)
+        case .gentle: Tuning(topMagnet: 20, nearEdge: 60, nearSpeed: 600, nearTravel: 100,
+                             throwSpeed: 1800, throwAhead: 0.2, throwReach: 300)
+        case .normal: Tuning(topMagnet: 40, nearEdge: 120, nearSpeed: 400, nearTravel: 60,
+                             throwSpeed: 1200, throwAhead: 0.3, throwReach: 600)
+        case .strong: Tuning(topMagnet: 60, nearEdge: 200, nearSpeed: 300, nearTravel: 40,
+                             throwSpeed: 900, throwAhead: 0.4, throwReach: 900)
         }
     }
 }

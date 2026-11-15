@@ -43,6 +43,8 @@ Requires macOS Tahoe (26) or later. No Xcode or developer tools needed.
 **Snapping**
 - Drag a window to a screen edge or corner to snap it to half or a quarter, with a preview first. Drag it away
   and it gets its old size back.
+- Quick snap (a Mac extra): throw a window toward an edge and let go a little early, and it still snaps there.
+  Choose Off, Gentle, Normal or Strong in Taskbar settings > Windows.
 - Drag a window to the top of the screen for the snap layouts bar, or hover the maximize button for Snap Layouts
   (halves, thirds, quarters and more). Control+Option+Z opens them from the keyboard, with numbers to pick a spot.
 - Snap Assist fills the rest of the layout with your other windows. Windows snapped together form a group that

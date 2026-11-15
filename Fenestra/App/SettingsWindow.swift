@@ -152,6 +152,14 @@ struct WindowsSettingsView: View {
                 Toggle("Snap windows", isOn: $s.snapWindows)
                 Toggle("Show snap layouts when I drag a window to the top of my screen", isOn: $s.snapBarOnDrag)
                     .disabled(!s.snapWindows)
+                Picker("Quick snap", selection: $s.quickSnap) {
+                    ForEach(QuickSnap.allCases) { Text($0.label).tag($0) }
+                }
+                .disabled(!s.snapWindows)
+                Text("Quick snap also snaps a window you let go just before a screen edge: thrown toward it, still "
+                     + "moving toward it, or just below the top. Gentle needs a clear throw; Strong catches more, "
+                     + "but may snap a window you meant to place near an edge.")
+                    .foregroundStyle(.secondary)
                 Toggle("Show snap layouts when I hover over a window's maximize button", isOn: $s.snapLayoutsOnHover)
                     .disabled(!s.captionButtons)
                 Toggle("When I snap a window, suggest what I can snap next to it", isOn: $s.snapAssist)

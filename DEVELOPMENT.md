@@ -821,3 +821,33 @@ Asked for so that (almost) everything Fenestra does can be turned off. Defaults 
 Still fixed: the Control+Option key choice itself (Windows key = Control+Option, Alt = Option), and the hiding of the
 taskbar for full-screen windows (Windows has no switch for that either).
 
+## Quick snap (2026-11-15)
+
+Fast drags were let go just before the edge, so they didn't snap (Windows needs the pointer at the edge too). Also,
+after a few idle seconds an app may report its window's move to Accessibility late (after the release), or not
+at all in time. Settings > Windows > Snap windows > Quick snap: Off / Gentle / Normal (default) / Strong
+(`QuickSnap.Tuning` in Settings.swift).
+
+How a release short of an outer edge still snaps (DragSnap.swift):
+
+| Rule | Normal | What it means |
+|---|---|---|
+| Top magnet | 40 pt | let go this close below the top of a display = touching it |
+| Close call | 120 pt, 400 pt/s or 60 pt in 0.25 s | near an outer edge and still moving toward it, or having come toward it |
+| Throw | 1200 pt/s, 0.3 s, 600 pt | moving fast enough to reach the edge within that time and distance |
+
+Edges shared with another display never count (the pointer passes through them). Zones: half at a side edge,
+quarter near a top corner (64 pt), maximize at the top.
+
+Where the release is seen (all three apply the same rules):
+
+1. A drag session (window moved while the button was down): pointer samples from the drag event tap.
+2. The first window move arrives after the release (`quickDrag`): samples from a global monitor that records
+   `leftMouseDragged` positions only while a button is held.
+3. No move reported at all 0.15 s after the release (`releaseCheck`): the window under the press (one
+   `CGWindowListCopyWindowInfo` per click) is compared with its position now; if it moved with the pointer it was a
+   title bar drag.
+
+Every drag logs one line: `drag: <id> ended (...) after N ms, N pointer updates, last at x,y, up at x,y, zone ...`
+with the rule that matched or why nothing did (speed, distance to the edge). Idle cost: none (measured 0.0% CPU).
+
