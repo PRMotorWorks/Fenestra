@@ -40,8 +40,10 @@ cd ~/Documents/Fenestra
 - Open `Fenestra.xcodeproj` in Xcode to edit. Running from Xcode works too (it isn't supervised by the watchdog then).
 - To start it again after `restore.sh`: open `~/Applications/Fenestra.app`.
 - Logs: `~/Library/Logs/Fenestra.log`.
-- Signing: your Apple Development certificate (team GTW3QXXPHD), so permissions survive rebuilds.
-  macOS may ask once whether `codesign` may use the key: choose **Always Allow**.
+- Signing (`Config/Signing.xcconfig`): ad-hoc by default, so it builds on any Mac, but macOS asks for the
+  permissions again after each rebuild. To sign with your Apple Development certificate so permissions survive
+  rebuilds, `cp Config/Local.xcconfig.example Config/Local.xcconfig` and put your team ID in it (the file is
+  gitignored). macOS may then ask once whether `codesign` may use the key: choose **Always Allow**.
 
 ### Installing on another Mac (no Xcode)
 

@@ -1,0 +1,14 @@
+// Code signing for builds from Xcode and install.sh.
+//
+// Default: ad-hoc ("Sign to Run Locally"), which works on any Mac with no Apple account. macOS then asks for
+// Fenestra's permissions again after each rebuild.
+//
+// To sign with your own Apple Development certificate instead (permissions survive rebuilds):
+//   cp Config/Local.xcconfig.example Config/Local.xcconfig
+// and put your team ID in it. Local.xcconfig is gitignored, so your team ID stays out of the repository.
+// package.sh ignores all of this: it re-signs the app it puts in the disk image.
+
+CODE_SIGN_IDENTITY = -
+DEVELOPMENT_TEAM =
+
+#include? "Local.xcconfig"

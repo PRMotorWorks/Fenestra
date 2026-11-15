@@ -8,6 +8,7 @@
 
 /* Begin PBXFileReference section */
 		F0E5000000000000000000A1 /* Fenestra.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Fenestra.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F0E5000000000000000000C1 /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Signing.xcconfig; path = Config/Signing.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -32,6 +33,7 @@
 		F0E5000000000000000000A4 = {
 			isa = PBXGroup;
 			children = (
+				F0E5000000000000000000C1 /* Signing.xcconfig */,
 				F0E5000000000000000000A2 /* Fenestra */,
 				F0E5000000000000000000A5 /* Products */,
 			);
@@ -162,12 +164,11 @@
 		};
 		F0E5000000000000000000B3 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = F0E5000000000000000000C1 /* Signing.xcconfig */;
 			buildSettings = {
-				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 2;
-				DEVELOPMENT_TEAM = GTW3QXXPHD;
 				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Config/Info.plist;
@@ -186,12 +187,11 @@
 		};
 		F0E5000000000000000000B4 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = F0E5000000000000000000C1 /* Signing.xcconfig */;
 			buildSettings = {
-				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 2;
-				DEVELOPMENT_TEAM = GTW3QXXPHD;
 				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Config/Info.plist;

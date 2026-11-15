@@ -1,0 +1,6 @@
+// Copy to Config/Local.xcconfig (gitignored) to sign local builds with your Apple Development certificate.
+// Your team ID: Xcode > Settings > Accounts, or `security find-identity -v -p codesigning` (the OU of the
+// certificate, shown in Keychain Access).
+
+CODE_SIGN_IDENTITY = Apple Development
+DEVELOPMENT_TEAM = YOURTEAMID
