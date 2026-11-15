@@ -199,15 +199,28 @@ struct TaskViewButton: View {
 }
 
 /// Red unread badge, top-right of an icon (Windows shows a small colored count).
+/// "99+" used to wrap onto two lines inside the icon-sized overlay and bulge out of the circle: one line, never
+/// squeezed, slightly smaller text for three characters. Counts over 99 show "99+", as on Windows.
 struct BadgeView: View {
     let text: String
+    private var shown: String {
+        let numeric = text.allSatisfy { $0.isNumber || $0 == "," || $0 == "." }
+        if numeric, let n = Int(text.filter(\.isNumber)), n > 99 { return "99+" }
+        return text.count > 3 ? "99+" : text
+    }
     var body: some View {
-        Text(text.count > 3 ? "99+" : text)
-            .font(.system(size: 9, weight: .bold))
+        let wide = shown.count > 2
+        Text(shown)
+            .font(.system(size: wide ? 8 : 9, weight: .bold))
+            .monospacedDigit()
+            .kerning(wide ? -0.3 : 0)
             .foregroundStyle(.white)
-            .padding(.horizontal, 4)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, wide ? 3 : 0)
             .frame(minWidth: 15, minHeight: 15)
             .background(Capsule().fill(Color(red: 0.86, green: 0.2, blue: 0.2)))
+            .fixedSize()
     }
 }
 
