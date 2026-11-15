@@ -68,7 +68,7 @@ enum Lifecycle {
             signal(sig, SIG_IGN)
             let src = DispatchSource.makeSignalSource(signal: sig, queue: .main)
             src.setEventHandler {
-                MainActor.assumeIsolated { markStopped() }
+                MainActor.assumeIsolated { MenuBarBlocker.shared.stop(); markStopped() }
                 exit(0)
             }
             src.resume()
@@ -186,6 +186,7 @@ enum Lifecycle {
                 Log.write("defaults: \(out)")
                 MainActor.assumeIsolated {
                     CaptionController.refreshMenuBarHidden()
+                    MenuBarBlocker.shared.update(reason: "defaults applied")
                     Log.write("workarea: menu bar \(CaptionController.menuBarHidden ? "hidden" : "shown"), "
                               + "top of main work area y=\(Int(CaptionController.workArea(screen: NSScreen.screens[0]).minY)), "
                               + "AppKit menu bar inset \(Int(NSScreen.screens[0].frame.maxY - NSScreen.screens[0].visibleFrame.maxY))")

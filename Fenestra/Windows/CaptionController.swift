@@ -947,7 +947,10 @@ final class CaptionController {
         menuBarObserver = DistributedNotificationCenter.default().addObserver(
             forName: Notification.Name("AppleInterfaceMenuBarHidingChangedNotification"), object: nil, queue: .main
         ) { _ in
-            MainActor.assumeIsolated { CaptionController.menuBarHidden = CaptionController.readMenuBarHidden() }
+            MainActor.assumeIsolated {
+                CaptionController.menuBarHidden = CaptionController.readMenuBarHidden()
+                MenuBarBlocker.shared.update(reason: "menu bar setting changed")
+            }
         }
     }
 

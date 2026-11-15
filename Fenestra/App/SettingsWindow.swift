@@ -169,11 +169,14 @@ struct WindowsSettingsView: View {
             }
             Section("Menu bar and app menus") {
                 Toggle("Hide the macOS menu bar", isOn: $s.hideMenuBar)
+                Toggle("Keep it hidden when the pointer touches the top of the screen", isOn: $s.menuBarNoReveal)
+                    .disabled(!s.hideMenuBar)
                 Toggle("Show a menu button next to the title bar buttons", isOn: $s.menuButton)
                     .disabled(!s.captionButtons)
                 Toggle("Tap Option to open the app's menus (Alt)", isOn: $s.optionTapMenus)
                 Toggle("Option+Space opens the window menu (Alt+Space)", isOn: $s.altSpaceMenu)
-                Text("The hidden menu bar still slides down when the pointer touches the top of the screen. "
+                Text("Without \"Keep it hidden\", the hidden menu bar slides down when the pointer touches the top "
+                     + "of the screen. Menus of menu bar icons still open at the top right. "
                      + "Right-click the title bar buttons for the window menu (Restore, Move, Size, Minimize, Maximize, "
                      + "Close) "
                      + "and the app's menus. In Automatic button size the menu button is left out where it would "

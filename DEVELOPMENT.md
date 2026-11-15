@@ -541,13 +541,14 @@ the arrangement and the main display's mode back and closes its windows. Results
 ## Phase 6: menu bar migration
 
 The macOS menu bar is auto-hidden, its icons move into the taskbar's tray, and app menus (Apple, the app menu,
-File, Edit...) open from each window instead. With SIP on the menu bar can't be removed, only auto-hidden: it
-still slides down when the pointer touches the top edge of a display (macOS behavior, kept as a fallback).
+File, Edit...) open from each window instead. With SIP on the menu bar can't be removed, only auto-hidden; on top of
+that Fenestra makes it invisible and click-through, so it no longer slides in when the pointer touches the top edge.
 Options: Fenestra settings > **Windows** > Menu bar and app menus, and **Taskbar** > Other system tray icons.
 
 | Setting | Default | Does |
 |---|---|---|
 | Hide the macOS menu bar | on | `NSGlobalDomain _HIHideMenuBar = true` ("Automatically hide and show the menu bar: Always"), backed up and restored like every other key. Applied live: maximized windows and the work area reach the top of each display. Off: your original value goes back |
+| Keep it hidden when the pointer touches the top of the screen | on | The hidden menu bar's opacity is set to 0 (private SkyLight `SLSSetMenuBarInsetAndAlpha`): its slide-in at the top edge shows nothing and clicks go through to the windows under it. macOS resets it when Mission Control runs, so Fenestra sets it again after Mission Control (the Dock's `AXExpose*` notifications), Space changes, app switches, wake and display changes. Quit, crash and switching it off put opacity 1 back (`restore.sh` runs `Fenestra --menubar-reset`). Only while the menu bar is hidden |
 | Show a menu button next to the title bar buttons | on | A fourth button (three lines) right of close. Click: the app's whole menu bar as a dropdown under it (Apple menu, app menu in bold, File, Edit, View...), each a submenu read when it opens. Choosing an item runs the app's real command. The window comes forward first, so the command applies to it. In Automatic button size it is left out where it would cover the app's own controls, and in Chromium and Electron apps (Brave, Claude): their menus are one right-click or Option tap away |
 | Tap Option to open the app's menus (Alt) | on | Press and release Option alone (under 0.6 s, no other key, modifier or click in between): the front app's menus open under its window's caption buttons (top-left of the display if it has no window). Arrow keys, Return and Esc work in it (let go of Option first: Option+Up/Down jumps to the first/last item, as in every macOS menu). Option+Tab, Option+key typing and Option-click are unaffected |
 | Right-click the caption buttons | always | Windows' window menu: Restore, Minimize, Maximize, Close, then the app's menus |
@@ -574,6 +575,7 @@ ms, a submenu 2 to 20 ms).
 
 | Feature | API | Tier |
 |---|---|---|
+| Keep it hidden at the top edge | `SLSMainConnectionID` + `SLSSetMenuBarInsetAndAlpha(cid, 0, 1, alpha)` from SkyLight via `dlsym` (`System/MenuBarBlocker.swift`); Dock app element AX notifications `AXExposeShowAllWindows`, `AXExposeShowFrontWindows`, `AXExposeShowDesktop`, `AXExposeExit` | private SkyLight + Accessibility |
 | Hide the menu bar | `defaults write NSGlobalDomain _HIHideMenuBar`; distributed notification `AppleInterfaceMenuBarHidingChangedNotification` (posted from `osascript -l JavaScript`, no Apple events, no Automation prompt) so running apps apply it at once | public key + undocumented notification |
 | Menu bar icons | `AXExtrasMenuBar` of each app (`AXUIElementCreateApplication`), children `AXMenuBarItem` / `AXMenuExtra`: `kAXIdentifierAttribute`, `kAXDescriptionAttribute`, `kAXPositionAttribute`, `kAXSizeAttribute` | Accessibility |
 | Click an icon | its `AXMenu` child read while closed (mirrored into an `NSMenu` above the tray, items pressed with `kAXPressAction`), else `kAXPressAction` on the icon itself | Accessibility |
@@ -587,7 +589,7 @@ ms, a submenu 2 to 20 ms).
 | # | Do this | Windows 11 25H2 | Fenestra should |
 |---|---|---|---|
 | 1 | Look at the top of both displays | no menu bar | none; windows and Maximize reach the very top |
-| 2 | Move the pointer to the top edge and wait | nothing | the macOS menu bar slides down (can't be turned off with SIP on) |
+| 2 | Move the pointer to the top edge and wait, also after opening and closing Mission Control | nothing | nothing (with "Keep it hidden" off: the macOS menu bar slides down) |
 | 3 | Click ^ on the taskbar | hidden icons flyout | Claude and Screen Mirroring icons, then Fenestra's settings and permissions icons |
 | 4 | Click the Screen Mirroring icon | its flyout opens above the taskbar | the menu bar slides in and Screen Mirroring opens at the top right |
 | 5 | Right-click Claude's icon > Show on the taskbar | (Windows: drag it out of the flyout) | the icon moves next to ^; right-click > Hide in the overflow menu puts it back |
@@ -608,8 +610,8 @@ Esc). Results: `grep menubartest ~/Library/Logs/Fenestra-app.log`.
 
 ### Phase 6: still different from real Windows 11
 
-- The menu bar is auto-hidden, not gone: it slides in at the top edge, and macOS shows it for full-screen apps the
-  same way. With SIP on there is no way to remove it.
+- The menu bar is auto-hidden and invisible, not gone: it still exists, and menus of menu bar icons still open under
+  where it would be. With SIP on there is no way to remove it outright.
 - Menus of most menu bar icons, and panels such as Screen Mirroring, open at the top right of the main display under
   the menu bar (macOS draws them there; another app's menus and panels can't be moved). Only icons whose menu can be
   read while closed open above the tray.

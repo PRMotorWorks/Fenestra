@@ -78,6 +78,13 @@ if [ "$restored_menubar" = 1 ]; then
   # for Automation only posts a distributed notification here: no Apple events, so no Automation prompt.
   osascript -l JavaScript -e 'ObjC.import("Foundation"); $.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObjectUserInfoDeliverImmediately("AppleInterfaceMenuBarHidingChangedNotification", $(), $(), true)' >/dev/null 2>&1
 fi
+# The menu bar's opacity (Fenestra sets it to 0 so the hidden menu bar can't slide in at the top edge).
+for app in "$HOME/Applications/Fenestra.app" "/Applications/Fenestra.app"; do
+  if [ -x "$app/Contents/MacOS/Fenestra" ]; then
+    "$app/Contents/MacOS/Fenestra" --menubar-reset >/dev/null 2>&1
+    break
+  fi
+done
 say "Dock, menu bar and defaults restored."
 
 # 4. Panic uninstall.

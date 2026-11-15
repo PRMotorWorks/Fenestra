@@ -5,6 +5,10 @@ import SwiftUI
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     static func main() {
+        // restore.sh (quit, crash, uninstall): give the menu bar its normal opacity back, then exit.
+        if CommandLine.arguments.contains("--menubar-reset") {
+            exit(MenuBarBlocker.setAlpha(1) ? 0 : 1)
+        }
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
@@ -89,6 +93,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        MenuBarBlocker.shared.stop()
         Lifecycle.markStopped()
     }
 }

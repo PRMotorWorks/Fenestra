@@ -184,6 +184,10 @@ final class AppSettings: ObservableObject {
     /// Phase 6: menu bar migration.
     /// Auto-hide the macOS menu bar (NSGlobalDomain _HIHideMenuBar through apply-defaults.sh, backed up).
     @Published var hideMenuBar: Bool { didSet { d.set(hideMenuBar, forKey: "hideMenuBar"); Lifecycle.applyDefaults() } }
+    /// Keep the hidden menu bar from sliding in at the top edge (MenuBarBlocker, private SkyLight alpha).
+    @Published var menuBarNoReveal: Bool {
+        didSet { d.set(menuBarNoReveal, forKey: "menuBarNoReveal"); MenuBarBlocker.shared.update(reason: "setting") }
+    }
     /// Menu button to the right of the caption buttons: the app's menus as a dropdown.
     @Published var menuButton: Bool { didSet { d.set(menuButton, forKey: "menuButton"); CaptionController.shared.settingsChanged() } }
     /// Tapping Option alone opens the front app's menus (Alt on Windows).
@@ -255,6 +259,7 @@ final class AppSettings: ObservableObject {
         rememberWindowLocations = bool("rememberWindowLocations", true)
         minimizeOnDisconnect = bool("minimizeOnDisconnect", true)
         hideMenuBar = bool("hideMenuBar", true)
+        menuBarNoReveal = bool("menuBarNoReveal", true)
         menuButton = bool("menuButton", true)
         optionTapMenus = bool("optionTapMenus", true)
         altSpaceMenu = bool("altSpaceMenu", true)
