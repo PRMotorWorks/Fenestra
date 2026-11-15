@@ -951,6 +951,11 @@ final class CaptionController {
         }
     }
 
+    /// Height the menu bar takes at the top of `screen` (0 while it auto-hides), not trusting a stale visibleFrame.
+    static func menuBarInset(_ screen: NSScreen) -> CGFloat {
+        menuBarHidden ? 0 : max(screen.frame.maxY - screen.visibleFrame.maxY, 0)
+    }
+
     static func workArea(screen: NSScreen) -> CGRect {
         let ph = primaryHeight
         var vf = screen.visibleFrame

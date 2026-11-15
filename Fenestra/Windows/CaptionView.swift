@@ -5,6 +5,9 @@ import AppKit
 final class CaptionPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+    /// Exactly where we put it: AppKit otherwise pushes a panel out from under the menu bar, and with a stale idea
+    /// of the menu bar that put the buttons 30 pt below a maximized window's top (user report 2026-11-15).
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 
     init(view: CaptionView) {
         super.init(contentRect: NSRect(x: 0, y: 0, width: 138, height: 32),

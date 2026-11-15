@@ -61,7 +61,7 @@ final class WorkAreaEnforcer {
         let screenTop = primaryHeight - screen.frame.maxY
         let screenBottom = primaryHeight - screen.frame.minY
         let taskbarTop = screenBottom - reserved
-        let workTop = screenTop + (screen.frame.maxY - screen.visibleFrame.maxY)   // below the menu bar, if shown
+        let workTop = screenTop + CaptionController.menuBarInset(screen)   // below the menu bar, if shown
 
         guard f.midX >= screen.frame.minX, f.midX <= screen.frame.maxX,
               f.midY >= screenTop, f.midY <= screenBottom else { return }

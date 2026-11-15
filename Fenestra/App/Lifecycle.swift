@@ -187,7 +187,8 @@ enum Lifecycle {
                 MainActor.assumeIsolated {
                     CaptionController.refreshMenuBarHidden()
                     Log.write("workarea: menu bar \(CaptionController.menuBarHidden ? "hidden" : "shown"), "
-                              + "top of main work area y=\(Int(CaptionController.workArea(screen: NSScreen.screens[0]).minY))")
+                              + "top of main work area y=\(Int(CaptionController.workArea(screen: NSScreen.screens[0]).minY)), "
+                              + "AppKit menu bar inset \(Int(NSScreen.screens[0].frame.maxY - NSScreen.screens[0].visibleFrame.maxY))")
                 }
             }
         }

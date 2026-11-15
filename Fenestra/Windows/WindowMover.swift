@@ -143,8 +143,9 @@ final class WindowMover {
         label.frame.origin = NSPoint(x: 12, y: (size.height - label.frame.height) / 2)
         // Centered near the top of the window's display, clear of the window being moved.
         let screen = Displays.screen(forAX: original) ?? NSScreen.main
-        let v = screen?.visibleFrame ?? .zero
-        p.setFrame(NSRect(x: v.midX - size.width / 2, y: v.maxY - size.height - 16, width: size.width,
+        let f = screen?.frame ?? .zero
+        let top = f.maxY - (screen.map(CaptionController.menuBarInset) ?? 0)
+        p.setFrame(NSRect(x: f.midX - size.width / 2, y: top - size.height - 16, width: size.width,
                           height: size.height), display: true)
     }
 

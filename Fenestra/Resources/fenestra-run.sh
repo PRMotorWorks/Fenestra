@@ -25,6 +25,12 @@ if [ ! -d "$APP" ]; then
 fi
 
 echo "starting $(date +%s)" > "$STATE"
+# Apply the macOS changes before Fenestra starts, so it starts with the menu bar already hidden: AppKit reads that
+# once at launch, and a later change left it reserving the menu bar's 30 pt (gap above maximized windows, caption
+# buttons pushed down). Fenestra applies them again at launch; that second run changes nothing.
+HIDE="$(defaults read local.fenestra.Fenestra hideMenuBar 2>/dev/null || echo 1)"
+OFF="$(defaults read local.fenestra.Fenestra macOSChangesOff 2>/dev/null | tr -d ' ()"\n')"
+[ -x "$SUPPORT/apply-defaults.sh" ] && FENESTRA_HIDE_MENUBAR="$HIDE" FENESTRA_OFF="$OFF" "$SUPPORT/apply-defaults.sh" >/dev/null 2>&1
 # `open` launches through LaunchServices, so macOS attributes permissions to Fenestra itself
 # (not to this script). -W waits until the app exits.
 /usr/bin/open -W -a "$APP" --args --from-agent

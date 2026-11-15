@@ -50,7 +50,7 @@ final class TaskView {
             }
             let items = all.filter { screenIndex($0) == i }
             let m = WindowGridModel(items: items)
-            let top = screen.frame.maxY - screen.visibleFrame.maxY      // menu bar
+            let top = CaptionController.menuBarInset(screen)      // menu bar
             m.layout(in: CGSize(width: frame.width - 120, height: frame.height - top - 120),
                      maxH: min(frame.height * 0.32, 300), minH: 70)
             m.onPick = { w in TaskView.shared.pick(w) }
