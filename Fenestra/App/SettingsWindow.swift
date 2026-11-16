@@ -505,6 +505,7 @@ enum SettingsCatalog {
 struct SettingsView: View {
     @ObservedObject private var nav = SettingsNav.shared
     @FocusState private var searchFocused: Bool
+    @State private var selection: SettingsPage? = SettingsNav.shared.page
 
     var body: some View {
         NavigationSplitView {
@@ -512,12 +513,17 @@ struct SettingsView: View {
                 SearchField(text: $nav.query, focused: $searchFocused)
                     .padding(.horizontal, 10)
                     .padding(.top, 8)
-                List(selection: Binding(get: { nav.query.isEmpty ? nav.page : nil },
-                                        set: { if let p = $0 { nav.go(p) } })) {
+                // Plain @State selection with tags of the same type (SettingsPage): a computed Binding or
+                // Optional tags left the rows unclickable.
+                List(selection: $selection) {
                     ForEach(SettingsPage.allCases) { p in
-                        Label(p.title, systemImage: p.symbol).tag(p as SettingsPage?)
+                        Label(p.title, systemImage: p.symbol).tag(p)
                     }
                 }
+                .onChange(of: selection) { _, p in if let p, p != nav.page || !nav.query.isEmpty { nav.go(p) } }
+                .onChange(of: nav.page) { _, p in selection = p }
+                // While searching no row is selected, so clicking any page (even the last one) opens it.
+                .onChange(of: nav.query) { _, q in selection = q.isEmpty ? nav.page : nil }
             }
             .navigationSplitViewColumnWidth(190)
         } detail: {
