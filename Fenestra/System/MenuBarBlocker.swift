@@ -6,6 +6,8 @@ import AppKit
 /// alpha 0 the menu bar is invisible and lets clicks through, so the slide-in at the top edge shows nothing.
 /// WindowServer puts the alpha back when Mission Control runs (user test 2026-11-15), so it is set again after
 /// Mission Control (the Dock's AXExpose notifications), Space changes, app switches, wake and display changes.
+/// A Space switch can reset it well after the switch (user, 2026-11-16: the menu bar slid in for ~25 s after
+/// changing desktops), so it is also set again whenever the pointer reaches the top edge of a display.
 /// Only while `_HIHideMenuBar` is on: a shown menu bar at alpha 0 would be an empty strip.
 /// Quit, crash (restore.sh runs `Fenestra --menubar-reset`) and switching the setting off put alpha 1 back.
 @MainActor
@@ -30,6 +32,9 @@ final class MenuBarBlocker {
     private var started = false
     private var blocking = false
     private var dockObserver: AXObserver?
+    private var edgeMonitor: Any?
+    private var lastEdgeApply = Date.distantPast
+    private var lastEdgeLog = Date.distantPast
 
     /// Whether the reveal should be blocked right now.
     private var wanted: Bool {
@@ -59,7 +64,7 @@ final class MenuBarBlocker {
     private func reapply(reason: String, log: Bool = true) {
         guard wanted else { return }
         apply(reason: reason, log: log)
-        for delay in [0.3, 1.0] {
+        for delay in [0.3, 1.0, 2.5] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                 MainActor.assumeIsolated { MenuBarBlocker.shared.apply(reason: reason, log: false) }
             }
@@ -103,6 +108,28 @@ final class MenuBarBlocker {
             MainActor.assumeIsolated { MenuBarBlocker.shared.reapply(reason: "displays changed") }
         }
         watchDock()
+        // Global monitors need Accessibility, which Fenestra has (not delivered for Fenestra's own windows,
+        // none of which sit on the top edge).
+        edgeMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) { _ in
+            MainActor.assumeIsolated { MenuBarBlocker.shared.pointerMoved() }
+        }
+    }
+
+    /// The pointer touched the top edge of a display: set alpha 0 again (at most every 0.5 s), in case a Space
+    /// switch or anything else put the menu bar back since the last apply.
+    private func pointerMoved() {
+        guard blocking else { return }
+        let p = NSEvent.mouseLocation
+        guard NSScreen.screens.contains(where: { p.y >= $0.frame.maxY - 2 && p.x >= $0.frame.minX && p.x < $0.frame.maxX })
+        else { return }
+        let now = Date()
+        guard now.timeIntervalSince(lastEdgeApply) >= 0.5, wanted else { return }
+        lastEdgeApply = now
+        MenuBarBlocker.setAlpha(0)
+        if now.timeIntervalSince(lastEdgeLog) >= 60 {
+            lastEdgeLog = now
+            Log.write("menubar: set again at the top edge (logged once a minute)")
+        }
     }
 
     /// Mission Control, App Exposé and Show Desktop are run by the Dock, which posts these on its app element.
