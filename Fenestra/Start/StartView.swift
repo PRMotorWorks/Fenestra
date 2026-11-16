@@ -497,6 +497,12 @@ struct StartBottomBar: View {
             ForEach(StartFolder.allCases.filter { settings.startFolders.contains($0.rawValue) }) { f in
                 BarIcon(symbol: f.symbol, help: f.label) { PowerActions.openFolder(f) }
             }
+            if settings.startLockButton {
+                BarIcon(symbol: "lock", help: "Lock") {
+                    StartController.shared.hide(animated: false)
+                    PowerActions.lock()
+                }
+            }
             TaskbarButtonChrome(width: 36, height: 36,
                                 onLeft: { rect in PowerActions.popUp(PowerActions.powerMenu(), above: rect) }) {
                 Image(systemName: "power").font(.system(size: 15))

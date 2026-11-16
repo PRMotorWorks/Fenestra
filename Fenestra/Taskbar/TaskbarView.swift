@@ -100,13 +100,22 @@ struct TaskbarView: View {
         TaskbarActions.Scope(display: displayID, isMain: isMain).contains(w.display)
     }
 
+    /// Pinned on this taskbar: pinned everywhere, or pinned to this display only ("Pin to this taskbar only").
+    private func pinnedHere(_ item: AppItem) -> Bool {
+        item.pinned && settings.isPinned(item.id, onDisplay: Displays.uuid(displayID), isMain: isMain,
+                                         connected: TaskbarController.shared.taskbarDisplayUUIDs)
+    }
+
     /// Main taskbar: pinned apps and apps without a window stay there. Other taskbars: apps with a window on that display.
     private func showsItem(_ item: AppItem, _ wins: [WindowTracker.Win]) -> Bool {
+        let pinned = pinnedHere(item)
+        // Pinned to another display's taskbar only and not running: that taskbar shows it, this one doesn't.
+        if !pinned && !item.isRunning { return false }
         // Finder unpinned and without windows: gone from the taskbar, like a closed app.
-        if !item.pinned && item.isRunning && !item.looksRunning(wins) { return false }
+        if !pinned && item.isRunning && !item.looksRunning(wins) { return false }
         guard filtered else { return true }
         if wins.contains(where: isHere) { return true }
-        return isMain && (item.pinned || wins.isEmpty)
+        return isMain && (pinned || wins.isEmpty)
     }
 
     private func windowsHere(_ wins: [WindowTracker.Win]) -> [WindowTracker.Win] {

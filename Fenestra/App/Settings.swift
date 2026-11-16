@@ -60,6 +60,50 @@ enum TaskbarAppsOn: String, CaseIterable, Identifiable {
     }
 }
 
+/// The modifier key that opens Start when tapped alone (the Windows key). Control is there for keyboards
+/// remapped with Karabiner-Elements (Control and Command swapped), where the physical Command key sends Control.
+enum StartTapKey: String, CaseIterable, Identifiable {
+    case off, command, leftCommand, rightCommand, control, leftControl, rightControl
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .off: "Off"
+        case .command: "Command (either)"
+        case .leftCommand: "Left Command"
+        case .rightCommand: "Right Command"
+        case .control: "Control (either)"
+        case .leftControl: "Left Control"
+        case .rightControl: "Right Control"
+        }
+    }
+    /// Virtual key codes of the key(s): Command 55 left / 54 right, Control 59 left / 62 right.
+    var keyCodes: Set<UInt16> {
+        switch self {
+        case .off: []
+        case .command: [55, 54]
+        case .leftCommand: [55]
+        case .rightCommand: [54]
+        case .control: [59, 62]
+        case .leftControl: [59]
+        case .rightControl: [62]
+        }
+    }
+    var isControl: Bool { self == .control || self == .leftControl || self == .rightControl }
+}
+
+/// Which windows Alt+Tab (Option+Tab) shows when there are several displays.
+enum AltTabDisplays: String, CaseIterable, Identifiable {
+    case all, activeDisplay, pointerDisplay
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .all: "All displays"
+        case .activeDisplay: "Only the display with the window in front"
+        case .pointerDisplay: "Only the display with the pointer"
+        }
+    }
+}
+
 enum StartAllView: String, CaseIterable, Identifiable {
     case category, grid, list
     var id: String { rawValue }
@@ -126,8 +170,8 @@ final class AppSettings: ObservableObject {
     @Published var endTask: Bool { didSet { d.set(endTask, forKey: "endTask") } }
     /// The far corner clears every display (Windows) instead of only its own (default, the user's choice).
     @Published var showDesktopAllDisplays: Bool { didSet { d.set(showDesktopAllDisplays, forKey: "showDesktopAllDisplays") } }
-    /// Tap Command alone to open Start (Windows key).
-    @Published var commandTapStart: Bool { didSet { d.set(commandTapStart, forKey: "commandTapStart") } }
+    /// The key that opens Start when tapped alone (Windows key). Replaces the earlier on/off "commandTapStart".
+    @Published var startTapKey: StartTapKey { didSet { d.set(startTapKey.rawValue, forKey: "startTapKey") } }
     /// Control+Option+Tab = Windows key + Tab (Task view); Control+Option+D = Windows key + D (show desktop).
     @Published var taskViewShortcut: Bool { didSet { d.set(taskViewShortcut, forKey: "taskViewShortcut"); HotKeys.shared.configure() } }
     @Published var showDesktopShortcut: Bool { didSet { d.set(showDesktopShortcut, forKey: "showDesktopShortcut"); HotKeys.shared.configure() } }
@@ -148,6 +192,9 @@ final class AppSettings: ObservableObject {
     @Published var combine: WhenMode { didSet { d.set(combine.rawValue, forKey: "combine") } }
     @Published var smallButtons: WhenMode { didSet { d.set(smallButtons.rawValue, forKey: "smallButtons") } }
     @Published var pinned: [String] { didSet { d.set(pinned, forKey: "pinned") } }
+    /// Apps pinned to one display's taskbar only: bundle ID -> display UUID (`Displays.uuid`, stable across
+    /// reconnects). Apps in `pinned` without an entry are pinned on every taskbar.
+    @Published var pinnedDisplays: [String: String] { didSet { d.set(pinnedDisplays, forKey: "pinnedDisplays") } }
     /// Phase 5: "Show my taskbar on all displays" and "When using multiple displays, show my taskbar apps on".
     @Published var taskbarAllDisplays: Bool {
         didSet { d.set(taskbarAllDisplays, forKey: "taskbarAllDisplays"); TaskbarController.shared.layout() }
@@ -163,6 +210,8 @@ final class AppSettings: ObservableObject {
     @Published var startShowRecommended: Bool { didSet { d.set(startShowRecommended, forKey: "startShowRecommended") } }
     @Published var startAllView: StartAllView { didSet { d.set(startAllView.rawValue, forKey: "startAllView") } }
     @Published var startFolders: [String] { didSet { d.set(startFolders, forKey: "startFolders") } }
+    /// Lock button next to the power button on Start.
+    @Published var startLockButton: Bool { didSet { d.set(startLockButton, forKey: "startLockButton") } }
 
     // Windows: caption buttons and Settings > System > Multitasking > Snap windows
     @Published var captionButtons: Bool {
@@ -184,6 +233,21 @@ final class AppSettings: ObservableObject {
     @Published var snapAssist: Bool { didSet { d.set(snapAssist, forKey: "snapAssist") } }
     /// Option+Tab window switcher (Alt+Tab). Off: Option+Tab reaches apps again.
     @Published var altTab: Bool { didSet { d.set(altTab, forKey: "altTab"); HotKeys.shared.configure() } }
+    /// Alt+Tab shows every display's windows, or only the current display's.
+    @Published var altTabDisplays: AltTabDisplays { didSet { d.set(altTabDisplays.rawValue, forKey: "altTabDisplays") } }
+    /// While Alt+Tab is open, tapping Shift moves the selection back one window (Shift+Tab always does).
+    @Published var altTabShiftTap: Bool {
+        didSet { d.set(altTabShiftTap, forKey: "altTabShiftTap"); HotKeys.shared.configure() }
+    }
+    /// Custom key combinations for the rebindable shortcuts: `ShortcutAction` raw value -> `KeyCombo.stored`.
+    /// Missing entries use the default combination.
+    @Published var shortcuts: [String: String] { didSet { d.set(shortcuts, forKey: "shortcuts"); HotKeys.shared.configure() } }
+    func combo(_ a: ShortcutAction) -> KeyCombo { shortcuts[a.rawValue].flatMap(KeyCombo.init(stored:)) ?? a.defaultCombo }
+    func setCombo(_ a: ShortcutAction, _ c: KeyCombo?) {
+        var m = shortcuts
+        if let c, c != a.defaultCombo { m[a.rawValue] = c.stored } else { m[a.rawValue] = nil }
+        shortcuts = m
+    }
     /// Phase 5: Settings > System > Display > Multiple displays.
     @Published var rememberWindowLocations: Bool { didSet { d.set(rememberWindowLocations, forKey: "rememberWindowLocations") } }
     @Published var minimizeOnDisconnect: Bool { didSet { d.set(minimizeOnDisconnect, forKey: "minimizeOnDisconnect") } }
@@ -229,7 +293,8 @@ final class AppSettings: ObservableObject {
         showDesktopCorner = bool("showDesktopCorner", true)
         endTask = bool("endTask", true)
         showDesktopAllDisplays = bool("showDesktopAllDisplays", false)
-        commandTapStart = bool("commandTapStart", true)
+        startTapKey = StartTapKey(rawValue: d.string(forKey: "startTapKey") ?? "")
+            ?? (bool("commandTapStart", true) ? .command : .off)
         taskViewShortcut = bool("taskViewShortcut", true)
         showDesktopShortcut = bool("showDesktopShortcut", true)
         snapGroups = bool("snapGroups", true)
@@ -237,6 +302,7 @@ final class AppSettings: ObservableObject {
         macOSChangesOff = d.stringArray(forKey: "macOSChangesOff") ?? []
         combine = WhenMode(rawValue: d.string(forKey: "combine") ?? "") ?? .always
         smallButtons = WhenMode(rawValue: d.string(forKey: "smallButtons") ?? "") ?? .whenFull
+        pinnedDisplays = d.dictionary(forKey: "pinnedDisplays") as? [String: String] ?? [:]
         pinned = d.stringArray(forKey: "pinned") ?? [
             "com.apple.finder", "com.apple.Safari", "com.apple.AppStore", "com.apple.mail",
         ]
@@ -251,6 +317,7 @@ final class AppSettings: ObservableObject {
         startShowRecommended = bool("startShowRecommended", true)
         startAllView = StartAllView(rawValue: d.string(forKey: "startAllView") ?? "") ?? .category
         startFolders = d.stringArray(forKey: "startFolders") ?? ["settings", "explorer", "downloads"]
+        startLockButton = bool("startLockButton", false)
         captionButtons = bool("captionButtons", true)
         captionSize = CaptionSize(rawValue: d.string(forKey: "captionSize") ?? "") ?? .automatic
         snapLayoutsOnHover = bool("snapLayoutsOnHover", true)
@@ -263,6 +330,9 @@ final class AppSettings: ObservableObject {
         quickSnap = QuickSnap(rawValue: d.string(forKey: "quickSnap") ?? "")
             ?? (bool("snapThrow", true) ? .normal : .off)
         altTab = bool("altTab", true)
+        altTabDisplays = AltTabDisplays(rawValue: d.string(forKey: "altTabDisplays") ?? "") ?? .all
+        altTabShiftTap = bool("altTabShiftTap", true)
+        shortcuts = d.dictionary(forKey: "shortcuts") as? [String: String] ?? [:]
         taskbarAllDisplays = bool("taskbarAllDisplays", true)
         taskbarAppsOn = TaskbarAppsOn(rawValue: d.string(forKey: "taskbarAppsOn") ?? "") ?? .all
         rememberWindowLocations = bool("rememberWindowLocations", true)
@@ -301,7 +371,24 @@ final class AppSettings: ObservableObject {
     }
 
     func togglePin(_ bundleID: String) {
-        if let i = pinned.firstIndex(of: bundleID) { pinned.remove(at: i) } else { pinned.append(bundleID) }
+        if let i = pinned.firstIndex(of: bundleID) {
+            pinnedDisplays[bundleID] = nil
+            pinned.remove(at: i)
+        } else {
+            pinned.append(bundleID)
+        }
+    }
+    /// Pins an app to one display's taskbar only (`display` = `Displays.uuid`), or to every taskbar (nil).
+    func pin(_ bundleID: String, display: String?) {
+        pinnedDisplays[bundleID] = display
+        if !pinned.contains(bundleID) { pinned.append(bundleID) }
+    }
+    /// Whether a pinned app shows as pinned on the taskbar of `display` (a UUID). A pin on a display that is
+    /// not connected (or has no taskbar) shows on the main taskbar, so the app is never out of reach.
+    func isPinned(_ bundleID: String, onDisplay display: String, isMain: Bool, connected: Set<String>) -> Bool {
+        guard pinned.contains(bundleID) else { return false }
+        guard let only = pinnedDisplays[bundleID] else { return true }
+        return only == display || (isMain && !connected.contains(only))
     }
     func toggleStartPin(_ bundleID: String) {
         if let i = startPinned.firstIndex(of: bundleID) { startPinned.remove(at: i) } else { startPinned.append(bundleID) }

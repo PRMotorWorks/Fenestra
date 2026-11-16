@@ -14,6 +14,8 @@ final class AltTab {
     private var panel: OverlayPanel?
     private var showWork: DispatchWorkItem?
     private var optionWatch: Timer?
+    /// The display the switcher shows on: the main one, or the current one when it lists only that display's windows.
+    private var screen: NSScreen?
 
     /// Option+Tab (or Tab again while open).
     func tab(reverse: Bool) {
@@ -22,7 +24,17 @@ final class AltTab {
     }
 
     private func begin(reverse: Bool) {
-        let items = WindowList.all()
+        var items = WindowList.all()
+        let frontPid = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let frontEl = frontPid.flatMap(AX.focusedWindow)
+        let frontWin = frontEl.flatMap(AX.windowID)
+        // Settings > Keyboard > Alt+Tab shows windows from: only the current display's windows.
+        let target = Self.currentScreen(front: frontEl.flatMap(AX.frame))
+        if let target {
+            let id = Displays.id(target)
+            items = items.filter { Displays.screen(forAX: $0.frame).map(Displays.id) == id }
+        }
+        screen = target ?? TaskbarController.shared.screen ?? NSScreen.screens[0]
         guard !items.isEmpty else { HotKeys.shared.setSwitcherActive(false); return }
         active = true
         HotKeys.shared.setSwitcherActive(true)
@@ -30,15 +42,13 @@ final class AltTab {
         SnapAssist.shared.dismiss()
         let m = WindowGridModel(items: items)
         // The first card is the window in front; Alt+Tab starts on the one before it.
-        let frontPid = NSWorkspace.shared.frontmostApplication?.processIdentifier
-        let frontWin = frontPid.flatMap(AX.focusedWindow).flatMap(AX.windowID)
         let first = items[0].id == frontWin ? 1 : 0
         m.selected = reverse ? items.count - 1 : min(first, items.count - 1)
         m.onPick = { w in AltTab.shared.finish(w) }
         m.onClose = { w in WindowList.close(w) }
         model = m
 
-        let screen = TaskbarController.shared.screen ?? NSScreen.screens[0]
+        let screen = screen ?? NSScreen.screens[0]
         let area = CGSize(width: screen.frame.width * 0.9 - 32, height: screen.frame.height * 0.8 - 32)
         m.layout(in: area, maxH: 170, minH: 64)
         m.loadThumbnails(maxSize: CGSize(width: 380, height: 200))
@@ -57,7 +67,7 @@ final class AltTab {
 
     private func show() {
         guard active, let m = model else { return }
-        let screen = TaskbarController.shared.screen ?? NSScreen.screens[0]
+        let screen = screen ?? NSScreen.screens[0]
         let size = CGSize(width: min(m.contentSize.width + 32, screen.frame.width * 0.9),
                           height: min(m.contentSize.height + 32, screen.frame.height * 0.8))
         let frame = NSRect(x: (screen.frame.midX - size.width / 2).rounded(),
@@ -77,6 +87,19 @@ final class AltTab {
             p.animator().alphaValue = 1
         }
         panel = p
+    }
+
+    /// Nil = every display's windows. Otherwise the display with the window in front (else the pointer's
+    /// display) or the pointer's display, per the setting. One display: always nil.
+    private static func currentScreen(front: CGRect?) -> NSScreen? {
+        guard NSScreen.screens.count > 1 else { return nil }
+        let mouse = NSEvent.mouseLocation
+        let pointer = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }
+        switch AppSettings.shared.altTabDisplays {
+        case .all: return nil
+        case .pointerDisplay: return pointer
+        case .activeDisplay: return front.flatMap(Displays.screen(forAX:)) ?? pointer
+        }
     }
 
     /// Other keys while Option is held.

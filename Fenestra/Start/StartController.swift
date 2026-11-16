@@ -211,12 +211,16 @@ final class WinKey {
     private func handle(_ e: NSEvent) {
         switch e.type {
         case .flagsChanged:
+            // The chosen key (Settings > Keyboard > Start key): Command, or Control for keyboards remapped
+            // with Karabiner-Elements, where the physical Command key sends Control.
+            let key = AppSettings.shared.startTapKey
+            let flag: NSEvent.ModifierFlags = key.isControl ? .control : .command
             let mods = e.modifierFlags.intersection(.deviceIndependentFlagsMask)
-            let isCommandKey = e.keyCode == 55 || e.keyCode == 54
-            if isCommandKey && mods == .command {
+            let isKey = key.keyCodes.contains(e.keyCode)
+            if isKey && mods == flag {
                 downAt = Date(); tainted = false
-            } else if isCommandKey && !mods.contains(.command) {
-                if let d = downAt, !tainted, Date().timeIntervalSince(d) < 0.6, AppSettings.shared.commandTapStart {
+            } else if isKey && !mods.contains(flag) {
+                if let d = downAt, !tainted, Date().timeIntervalSince(d) < 0.6 {
                     StartController.shared.toggle()
                 }
                 downAt = nil

@@ -67,6 +67,7 @@ final class JumpListMenu: NSObject {
     static let shared = JumpListMenu()
     private var item: AppItem?
     private var scope: TaskbarActions.Scope?
+    private var displayUUID: String?
 
     func show(for item: AppItem, in view: NSView, scope: TaskbarActions.Scope? = nil) {
         ThumbnailController.shared.dismiss()
@@ -97,11 +98,27 @@ final class JumpListMenu: NSObject {
         open.image = icon
         menu.addItem(open)
 
-        let pin = NSMenuItem(title: item.pinned ? "Unpin from taskbar" : "Pin to taskbar",
-                             action: #selector(togglePin), keyEquivalent: "")
+        // Pins can belong to every taskbar or to one display's taskbar only (Settings > Taskbar > Pinned apps).
+        let s = AppSettings.shared, bars = TaskbarController.shared
+        let screen = view.window?.screen
+        let uuid = screen.map { Displays.uuid(Displays.id($0)) }
+        let isMain = screen.map { Displays.id($0) } == bars.screen.map { Displays.id($0) }
+        displayUUID = uuid
+        let pinnedHere = uuid.map { s.isPinned(item.id, onDisplay: $0, isMain: isMain, connected: bars.taskbarDisplayUUIDs) }
+            ?? item.pinned
+        let pin = NSMenuItem(title: pinnedHere ? "Unpin from taskbar" : "Pin to taskbar",
+                             action: pinnedHere ? #selector(unpin) : #selector(pinEverywhere), keyEquivalent: "")
         pin.target = self
-        pin.image = NSImage(systemSymbolName: item.pinned ? "pin.slash" : "pin", accessibilityDescription: nil)
+        pin.image = NSImage(systemSymbolName: pinnedHere ? "pin.slash" : "pin", accessibilityDescription: nil)
         menu.addItem(pin)
+        if bars.taskbarCount > 1, uuid != nil {
+            let onlyHere = pinnedHere && s.pinnedDisplays[item.id] == uuid
+            let other = NSMenuItem(title: onlyHere ? "Pin to all taskbars" : "Pin to this taskbar only",
+                                   action: onlyHere ? #selector(pinEverywhere) : #selector(pinHereOnly), keyEquivalent: "")
+            other.target = self
+            other.image = NSImage(systemSymbolName: onlyHere ? "pin" : "pin.square", accessibilityDescription: nil)
+            menu.addItem(other)
+        }
 
         // Not for Finder: it owns the desktop and relaunches itself anyway (user's choice).
         if item.isRunning, AppSettings.shared.endTask, item.id != "com.apple.finder" {
@@ -131,7 +148,11 @@ final class JumpListMenu: NSObject {
         NSWorkspace.shared.open([url], withApplicationAt: item.url, configuration: NSWorkspace.OpenConfiguration())
     }
     @objc private func newWindow() { if let item { TaskbarActions.newWindow(item) } }
-    @objc private func togglePin() { if let item { AppSettings.shared.togglePin(item.id) } }
+    @objc private func unpin() { if let item, item.pinned { AppSettings.shared.togglePin(item.id) } }
+    @objc private func pinEverywhere() { if let item { AppSettings.shared.pin(item.id, display: nil) } }
+    @objc private func pinHereOnly() {
+        if let item, let displayUUID { AppSettings.shared.pin(item.id, display: displayUUID) }
+    }
     @objc private func closeAll() { if let item { TaskbarActions.closeAll(item, scope: scope) } }
     @objc private func endTask() { if let item { TaskbarActions.endTask(item) } }
 }

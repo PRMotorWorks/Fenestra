@@ -106,6 +106,10 @@ final class TaskbarController {
 
     func hasTaskbar(display id: CGDirectDisplayID) -> Bool { bars.contains { $0.displayID == id } }
 
+    /// Displays that have a taskbar now, as `Displays.uuid` (for apps pinned to one display's taskbar).
+    var taskbarDisplayUUIDs: Set<String> { Set(bars.map { Displays.uuid($0.displayID) }) }
+    var taskbarCount: Int { bars.count }
+
     func bar(on s: NSScreen) -> Bar? {
         let id = Displays.id(s)
         return bars.first { $0.displayID == id }

@@ -41,7 +41,8 @@ Back to the [README](README.md) · [Install guide](INSTALL.md)
 ## Start menu
 
 - **Open it** from the Start button or by **tapping Command alone**, like the Windows key. It slides up in about
-  200 ms.
+  200 ms. The key can be changed in Settings > Keyboard: either Command, left or right Command, or Control (for
+  keyboards where Karabiner-Elements swaps Control and Command), or off.
 - **Pinned apps:** right-click any app to pin, unpin, move to front, pin to the taskbar, or open its file location.
   "Show all" appears when you have more than 16 pins.
 - **Recommended:** recently added apps and recently opened files (each can be switched off).
@@ -49,6 +50,7 @@ Back to the [README](README.md) · [Install guide](INSTALL.md)
 - **Search as you type:** apps and settings instantly, documents a moment later. Arrow keys, Return and Esc work.
 - **Folder shortcuts** next to the power button (Documents, Downloads, Pictures and others, your choice).
 - **Power menu:** Sleep, Restart, Shut down. **Your account:** Lock, Sign out, account settings.
+- **Lock button** next to the power button (optional, Settings > Start).
 - **Right-click Start** for the Windows key + X menu, with Mac equivalents.
 
 ## System tray
@@ -130,8 +132,9 @@ Back to the [README](README.md) · [Install guide](INSTALL.md)
 ## Switching windows
 
 - **Option+Tab** (Alt+Tab): hold Option for a switcher with live thumbnails, most recent first. Tab, Shift+Tab and
-  the arrows move; let go of Option to switch; Esc cancels; Delete or the X closes a window. A quick Option+Tab
-  switches straight back to the previous window.
+  the arrows move, and a tap on Shift goes back one window; let go of Option to switch; Esc cancels; Delete or the
+  X closes a window. A quick Option+Tab switches straight back to the previous window. It can list every
+  display's windows or only the current display's (Settings > Keyboard).
 - **Task view** (Control+Option+Tab, or the taskbar button): every open window as a thumbnail, each on its own
   display, over a blurred backdrop. Click one to switch or X to close it.
 - **Control+Option+D** shows the desktop.
@@ -162,6 +165,10 @@ Back to the [README](README.md) · [Install guide](INSTALL.md)
 - **Which apps each taskbar shows:** the same on all taskbars; everything on the main taskbar and only that
   display's apps on the others; or each taskbar only the apps with a window on its display. Clicks, previews and
   Close all windows then act on that display's windows only.
+- **Pin an app to one taskbar:** right-click it and choose **Pin to this taskbar only** (or set it per app in
+  Settings > Taskbar > Pinned apps). If that display isn't connected, the pin shows on the main taskbar.
+- **Alt+Tab on the current display only:** optionally list only the windows on the display with the window in
+  front, or the display with the pointer. The switcher then opens on that display.
 - **Unplug a monitor** and its windows minimize instead of piling onto the other screen. **Plug it back in** and
   they return to where they were, at the same size, snapped or maximized as before.
 
@@ -206,6 +213,14 @@ Fenestra quits or is uninstalled. Each group has its own switch in **Taskbar set
 | Alt+Tab | **Option+Tab** | Switch windows |
 | Alt | tap **Option** | App menus |
 | Alt+Space | **Option+Space** | Window menu |
+
+Settings > Keyboard lists every shortcut in one place. Task view, Snap layouts, Show desktop, Clipboard history and
+the window menu can each be given another key combination: click the shortcut and press the new keys.
+
+## Settings
+
+Settings has a search field (Command+F): type any word, such as "lock", "pin" or "alt tab", and the matching
+settings appear with their switches, ready to change, each with a link to its page.
 
 ## Differences from Windows 11
 
