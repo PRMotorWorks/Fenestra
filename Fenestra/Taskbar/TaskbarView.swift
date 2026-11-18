@@ -13,6 +13,16 @@ struct TaskbarView: View {
     @Environment(\.colorScheme) private var scheme
     @State private var dragID: String?
     @State private var dragOffset: CGFloat = 0
+    /// Measured widths: the tray (grows with pinned menu bar icons) and Start + Search + Task View.
+    @State private var trayWidth: CGFloat = 0
+    @State private var leadWidth: CGFloat = 0
+    @State private var overflowOpen = false
+
+    static let spacing: CGFloat = 4
+    static let labeledWidth: CGFloat = 160       // a button with a label (WindowButton, labeled AppButton)
+    private static let edgePad: CGFloat = 12     // left edge to Start
+    private static let trayGap: CGFloat = 8      // last app button to the tray
+    static let overflowID = "taskbar-apps-overflow"
 
     var body: some View {
         ZStack {
@@ -27,19 +37,24 @@ struct TaskbarView: View {
                 TaskbarMenu.shared.show(in: view, at: loc)
             }))
 
-            HStack(spacing: 0) {
-                if settings.alignment == .left {
-                    appGroup.padding(.leading, 12)
+            // The app buttons never reach the tray: centered while they fit, pushed left when crowded (as on
+            // Windows 11), and the rest behind a "..." button. They used to be centered on the whole width, under
+            // the tray, so with labels on a 1440 pt screen the last one showed up right of the clock.
+            GeometryReader { geo in
+                let plan = layout(barWidth: geo.size.width)
+                HStack(spacing: 0) {
+                    appGroup(plan).padding(.leading, plan.x)
                     Spacer(minLength: 0)
-                } else {
-                    Spacer(minLength: 0)
-                    appGroup
-                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .onChange(of: plan.hidden.map(\.id)) { _, _ in
+                    if FlyoutManager.shared.isOpen(Self.overflowID) { FlyoutManager.shared.close() }
                 }
             }
             HStack {
                 Spacer()
                 TrayView(secondary: !isMain, displayID: displayID)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { trayWidth = $0 }
             }
         }
         .frame(height: Theme.taskbarHeight)
@@ -48,35 +63,105 @@ struct TaskbarView: View {
     }
 
     private var buttonWidth: CGFloat { model.small ? 36 : 44 }
-    private var separate: Bool {
-        model.showsSeparateWindows(screenWidth: TaskbarController.shared.screen?.frame.width ?? 1920)
+
+    // MARK: Fitting the app buttons
+
+    private struct Plan {
+        var shown: [TaskbarSlot]
+        var hidden: [TaskbarSlot]
+        var x: CGFloat
     }
 
-    private var appGroup: some View {
-        HStack(spacing: 4) {
-            StartButton()
-            SearchButton()
-            if settings.showTaskView { TaskViewButton() }
-            ForEach(Array(model.items.enumerated()), id: \.element.id) { index, item in
-                let all = tracker.windows(for: item)
-                if showsItem(item, all) {
-                let wins = separate ? windowsHere(all) : []
-                Group {
-                    if wins.isEmpty {
-                        AppButton(item: item, badge: badges.badge(for: item), scope: scope,
-                                  hasWindowsHere: !filtered || all.contains(where: isHere) || all.isEmpty,
-                                  label: separate && item.looksRunning(all) ? item.name : nil,
-                                  onDrag: { dx in dragID = item.id; dragOffset = dx },
-                                  onDragEnd: { dx in finishDrag(item, index: index, dx: dx) })
-                    } else {
-                        ForEach(wins) { w in
-                            WindowButton(item: item, window: w, badge: w.id == wins.first?.id ? badges.badge(for: item) : nil,
-                                         scope: scope)
-                        }
-                    }
+    private func width(_ s: TaskbarSlot) -> CGFloat { s.labeled ? Self.labeledWidth : buttonWidth }
+    private func need(_ slots: [TaskbarSlot]) -> CGFloat { slots.reduce(0) { $0 + Self.spacing + width($1) } }
+
+    /// Which buttons fit between Start and the tray on this taskbar, and where the row starts.
+    private func layout(barWidth: CGFloat) -> Plan {
+        let measured = barWidth > 0 && trayWidth > 0 && leadWidth > 0
+        let room = barWidth - Self.edgePad - leadWidth - Self.trayGap - trayWidth
+        let separate: Bool
+        switch settings.combine {
+        case .always: separate = false
+        case .never: separate = true
+        // "When taskbar is full": labels while every window's button fits (counted per window, not per app).
+        case .whenFull: separate = !measured || need(slots(separate: true)) <= room
+        }
+        var shown = slots(separate: separate)
+        var hidden: [TaskbarSlot] = []
+        if measured && need(shown) > room {
+            let limit = room - (Self.spacing + buttonWidth)      // keep room for the "..." button
+            var used: CGFloat = 0
+            var cut = shown.count
+            for (i, s) in shown.enumerated() {
+                used += Self.spacing + width(s)
+                if used > limit { cut = i; break }
+            }
+            hidden = Array(shown[cut...])
+            shown = Array(shown[..<cut])
+        }
+        let group = leadWidth + need(shown) + (hidden.isEmpty ? 0 : Self.spacing + buttonWidth)
+        var x = Self.edgePad
+        if settings.alignment == .center {
+            x = max(Self.edgePad, min((barWidth - group) / 2, barWidth - trayWidth - Self.trayGap - group))
+        }
+        return Plan(shown: shown, hidden: hidden, x: x)
+    }
+
+    /// One entry per button: an app, or one of its windows when buttons aren't combined.
+    private func slots(separate: Bool) -> [TaskbarSlot] {
+        var out: [TaskbarSlot] = []
+        for (index, item) in model.items.enumerated() {
+            let all = tracker.windows(for: item)
+            guard showsItem(item, all) else { continue }
+            let wins = separate ? windowsHere(all) : []
+            if wins.isEmpty {
+                out.append(TaskbarSlot(id: item.id, item: item, index: index, window: nil,
+                                       labeled: separate && item.looksRunning(all),
+                                       hasWindowsHere: !filtered || all.contains(where: isHere) || all.isEmpty,
+                                       badge: badges.badge(for: item)))
+            } else {
+                for w in wins {
+                    out.append(TaskbarSlot(id: w.id, item: item, index: index, window: w, labeled: true,
+                                           hasWindowsHere: true,
+                                           badge: w.id == wins.first?.id ? badges.badge(for: item) : nil))
                 }
-                .offset(x: dragID == item.id ? dragOffset : 0)
-                .zIndex(dragID == item.id ? 1 : 0)
+            }
+        }
+        return out
+    }
+
+    private func appGroup(_ plan: Plan) -> some View {
+        HStack(spacing: Self.spacing) {
+            HStack(spacing: Self.spacing) {
+                StartButton()
+                SearchButton()
+                if settings.showTaskView { TaskViewButton() }
+            }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { leadWidth = $0 }
+            ForEach(plan.shown) { slot in
+                TaskbarSlotButton(slot: slot, scope: scope,
+                                  onDrag: { dx in dragID = slot.item.id; dragOffset = dx },
+                                  onDragEnd: { dx in finishDrag(slot.item, index: slot.index, dx: dx) })
+                    .offset(x: dragID == slot.item.id ? dragOffset : 0)
+                    .zIndex(dragID == slot.item.id ? 1 : 0)
+            }
+            if !plan.hidden.isEmpty {
+                let hidden = plan.hidden
+                let scope = scope
+                TaskbarButtonChrome(width: buttonWidth, height: model.small ? 32 : 40, highlighted: overflowOpen,
+                                    onLeft: { rect in
+                    FlyoutManager.shared.toggle(id: Self.overflowID, anchor: rect, align: .center) {
+                        TaskbarOverflowFlyout(slots: hidden, scope: scope)
+                    }
+                }) {
+                    Image(systemName: "ellipsis").font(.system(size: 16, weight: .semibold))
+                }
+                .help("Show more apps")
+                .onReceive(NotificationCenter.default.publisher(for: FlyoutManager.didShow)) { n in
+                    overflowOpen = n.object as? String == Self.overflowID
+                }
+                .onReceive(NotificationCenter.default.publisher(for: FlyoutManager.didClose)) { n in
+                    if n.object as? String == Self.overflowID { overflowOpen = false }
                 }
             }
         }
@@ -123,10 +208,66 @@ struct TaskbarView: View {
     }
 
     private func finishDrag(_ item: AppItem, index: Int, dx: CGFloat) {
-        let shift = Int((dx / (buttonWidth + 4)).rounded())
+        let shift = Int((dx / (buttonWidth + Self.spacing)).rounded())
         dragID = nil
         dragOffset = 0
         if shift != 0 { model.move(item.id, to: index + shift) }
+    }
+}
+
+/// One taskbar button: an app, or one of its windows ("Combine taskbar buttons": Never / When full).
+struct TaskbarSlot: Identifiable {
+    let id: String
+    let item: AppItem
+    let index: Int                  // in TaskbarModel.items, for drag-to-reorder
+    let window: WindowTracker.Win?
+    let labeled: Bool
+    let hasWindowsHere: Bool
+    let badge: String?
+}
+
+struct TaskbarSlotButton: View {
+    let slot: TaskbarSlot
+    var scope: TaskbarActions.Scope? = nil
+    /// In the "..." flyout: a click closes it first, and hovering shows no previews (they would replace it).
+    var inOverflow = false
+    var onDrag: ((CGFloat) -> Void)? = nil
+    var onDragEnd: ((CGFloat) -> Void)? = nil
+
+    var body: some View {
+        if let w = slot.window {
+            WindowButton(item: slot.item, window: w, badge: slot.badge, scope: scope, inOverflow: inOverflow)
+        } else {
+            AppButton(item: slot.item, badge: slot.badge, scope: scope, hasWindowsHere: slot.hasWindowsHere,
+                      label: slot.labeled ? slot.item.name : nil, inOverflow: inOverflow,
+                      onDrag: onDrag, onDragEnd: onDragEnd)
+        }
+    }
+}
+
+/// The app buttons that don't fit on the taskbar: icons in rows of five, labeled buttons in two columns.
+struct TaskbarOverflowFlyout: View {
+    let slots: [TaskbarSlot]
+    let scope: TaskbarActions.Scope?
+
+    var body: some View {
+        let icons = slots.filter { !$0.labeled }
+        let labeled = slots.filter(\.labeled)
+        VStack(alignment: .leading, spacing: TaskbarView.spacing) {
+            if !icons.isEmpty {
+                LazyVGrid(columns: Array(repeating: GridItem(.fixed(44), spacing: TaskbarView.spacing),
+                                         count: min(5, icons.count)), spacing: TaskbarView.spacing) {
+                    ForEach(icons) { TaskbarSlotButton(slot: $0, scope: scope, inOverflow: true) }
+                }
+            }
+            if !labeled.isEmpty {
+                LazyVGrid(columns: Array(repeating: GridItem(.fixed(TaskbarView.labeledWidth), spacing: TaskbarView.spacing),
+                                         count: min(2, labeled.count)), spacing: TaskbarView.spacing) {
+                    ForEach(labeled) { TaskbarSlotButton(slot: $0, scope: scope, inOverflow: true) }
+                }
+            }
+        }
+        .padding(8)
     }
 }
 
@@ -257,6 +398,7 @@ struct AppButton: View {
     /// False for a pinned app whose windows are all on another taskbar's display: no running pill here.
     var hasWindowsHere = true
     var label: String? = nil
+    var inOverflow = false
     var onDrag: ((CGFloat) -> Void)? = nil
     var onDragEnd: ((CGFloat) -> Void)? = nil
     @ObservedObject private var model = TaskbarModel.shared
@@ -280,10 +422,14 @@ struct AppButton: View {
         TaskbarButtonChrome(
             width: label == nil ? (small ? 36 : 44) : nil, height: small ? 32 : 40,
             highlighted: active,
-            onLeft: { rect in TaskbarActions.click(item, anchor: rect, scope: scope) },
+            onLeft: { rect in
+                if inOverflow { FlyoutManager.shared.close(animated: false) }
+                TaskbarActions.click(item, anchor: rect, scope: scope)
+            },
             onRight: { _, view in JumpListMenu.shared.show(for: item, in: view, scope: scope) },
             onMiddle: { _ in if AppSettings.shared.middleClickNewWindow { TaskbarActions.newWindow(item) } },
             onHoverChange: { inside, rect in
+                guard !inOverflow else { return }
                 if inside {
                     if running { ThumbnailController.shared.hoverBegan(item: item, anchor: rect, scope: scope) }
                 }
@@ -303,6 +449,8 @@ struct AppButton: View {
                 }
             }
             .padding(.horizontal, label == nil ? 0 : 8)
+            // Same width as a window's button, so the taskbar knows what fits before laying it out.
+            .frame(width: label == nil ? nil : TaskbarView.labeledWidth, alignment: .leading)
         }
         .overlay(alignment: .bottom) {
             if running {
@@ -323,6 +471,7 @@ struct WindowButton: View {
     let window: WindowTracker.Win
     var badge: String? = nil
     var scope: TaskbarActions.Scope? = nil
+    var inOverflow = false
     @ObservedObject private var model = TaskbarModel.shared
     @ObservedObject private var tracker = WindowTracker.shared
     @Environment(\.colorScheme) private var scheme
@@ -335,7 +484,10 @@ struct WindowButton: View {
         let small = model.small
         TaskbarButtonChrome(
             width: nil, height: small ? 32 : 40, highlighted: active,
-            onLeft: { _ in TaskbarActions.clickWindow(window, item: item) },
+            onLeft: { _ in
+                if inOverflow { FlyoutManager.shared.close(animated: false) }
+                TaskbarActions.clickWindow(window, item: item)
+            },
             onRight: { _, view in JumpListMenu.shared.show(for: item, in: view, scope: scope) },
             onMiddle: { _ in if AppSettings.shared.middleClickNewWindow { TaskbarActions.newWindow(item) } }
         ) {
@@ -351,7 +503,7 @@ struct WindowButton: View {
                     .frame(maxWidth: 120, alignment: .leading)
             }
             .padding(.horizontal, 8)
-            .frame(width: 160, alignment: .leading)
+            .frame(width: TaskbarView.labeledWidth, alignment: .leading)
         }
         .overlay(alignment: .bottom) {
             Capsule()

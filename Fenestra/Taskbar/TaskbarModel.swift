@@ -52,15 +52,6 @@ final class TaskbarModel: ObservableObject {
         }
     }
 
-    /// Whether this item shows one labeled button per window ("Combine taskbar buttons" = Never / When full).
-    func showsSeparateWindows(screenWidth: CGFloat) -> Bool {
-        switch AppSettings.shared.combine {
-        case .always: return false
-        case .never: return true
-        case .whenFull: return !isFull(screenWidth: screenWidth, buttonWidth: 168)
-        }
-    }
-
     /// Drag-to-reorder: moves `id` to `index` among the taskbar items and stores the order as pins.
     func move(_ id: String, to index: Int) {
         var order = items.map(\.id)
