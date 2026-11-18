@@ -281,12 +281,11 @@ final class AppMenus: NSObject, NSMenuDelegate {
 
     @objc private func pick(_ sender: NSMenuItem) {
         guard let ref = sender.representedObject as? AXRef else { return }
-        let title = sender.title
         // After the menu has closed, so the app sees an idle menu bar.
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
                 let ok = AX.perform(ref.element, kAXPressAction)
-                Log.write("appmenus: pressed '\(title)' ok=\(ok)")
+                Log.write("appmenus: pressed an item, ok=\(ok)")   // not its title: it can be a document name
             }
         }
     }

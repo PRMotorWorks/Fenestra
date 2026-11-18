@@ -306,7 +306,8 @@ final class QuickSettingsModel: ObservableObject {
             if !nets.isEmpty || networks.isEmpty { networks = nets }
             let hotspots = nets.filter(\.isHotspot)
             if !hotspots.isEmpty {
-                Log.write("quicksettings: hotspots: " + hotspots.map { "\($0.ssid ?? "?") apple-ie=\($0.hasAppleIE)" }.joined(separator: ", "))
+                // Count and flags only: network names stay out of the log (people paste it into public bug reports).
+                Log.write("quicksettings: \(hotspots.count) hotspot(s), apple-ie=\(hotspots.map(\.hasAppleIE))")
             }
             scanning = false
         }
@@ -391,7 +392,7 @@ final class QuickSettingsModel: ObservableObject {
         btMessage = nil
         Task {
             let r = await Bluetooth.connect(d)
-            Log.write("bluetooth: connect \(d.name) -> \(String(format: "0x%08x", r))")
+            Log.write("bluetooth: connect -> \(String(format: "0x%08x", r))")
             connectingBT = nil
             if r != kIOReturnSuccess { btMessage = "Couldn't connect. Make sure \(d.name) is on and nearby." }
             loadDevices()
@@ -400,7 +401,7 @@ final class QuickSettingsModel: ObservableObject {
 
     func disconnectDevice(_ d: Bluetooth.Device) {
         let r = Bluetooth.disconnect(d)
-        Log.write("bluetooth: disconnect \(d.name) -> \(String(format: "0x%08x", r))")
+        Log.write("bluetooth: disconnect -> \(String(format: "0x%08x", r))")
         btMessage = r == kIOReturnSuccess ? nil : "Couldn't disconnect \(d.name)."
         Task {
             try? await Task.sleep(for: .milliseconds(400))     // the link takes a moment to go down

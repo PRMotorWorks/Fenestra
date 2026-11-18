@@ -131,7 +131,7 @@ enum Lifecycle {
         try? fm.createDirectory(atPath: home + "/Library/Logs", withIntermediateDirectories: true)
         do {
             try plist.write(to: agentPlist, atomically: true, encoding: .utf8)
-            Log.write("setup: login agent installed (first launch from \(Bundle.main.bundlePath))")
+            Log.write("setup: login agent installed (first launch from \((Bundle.main.bundlePath as NSString).abbreviatingWithTildeInPath))")
         } catch {
             Log.write("setup: could not write the login agent: \(error.localizedDescription)")
         }

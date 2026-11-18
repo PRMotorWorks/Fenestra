@@ -952,7 +952,7 @@ taskbar, all on by default with switches in Settings.
 ### Middle-click test checklist (about 2 minutes)
 
 1. Middle-click a link in Safari: a new Safari window opens in front with the link. Log: `middleclick: new window
-   for https://...`.
+   for a https link`.
 2. Same in Chrome or Brave (new window in front).
 3. Middle-click a tab in each: the tab closes. Middle-click empty page space: nothing happens.
 4. Middle-click a taskbar app: a new window. Turn off Taskbar > Middle-click...: nothing happens.

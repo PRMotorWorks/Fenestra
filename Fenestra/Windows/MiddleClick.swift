@@ -169,7 +169,7 @@ final class MiddleClick: @unchecked Sendable {
         }
         guard current, let link else { return }
         Self.newWindowClick(at: h.point, kind: h.kind)
-        Log.write("middleclick: new window for \(link.scheme ?? "?")://\(link.host ?? "") (pid \(h.pid))")
+        Log.write("middleclick: new window for a \(link.scheme ?? "?") link (pid \(h.pid))")   // no host: browsing stays private
     }
 
     private static func post(_ e: CGEvent) {

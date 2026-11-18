@@ -28,5 +28,5 @@ body:
     id: log
     attributes:
       label: Log (optional)
-      description: The end of ~/Library/Logs/Fenestra-app.log, if it shows something relevant.
+      description: The end of ~/Library/Logs/Fenestra-app.log, if it shows something relevant. Issues are public, so look it over first; it lists app and display names.
       render: text

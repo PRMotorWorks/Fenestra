@@ -115,8 +115,8 @@ final class MenuExtras: ObservableObject {
                     let s = MenuExtras.shared
                     s.fullScanRunning = false
                     s.merge(pids: Set(apps.map(\.pid)), found: found, replaceAll: true)
-                    Log.write("menuextras: \(s.items.count) icon(s) from \(Set(found.map(\.extra.pid)).count) app(s) in \(ms) ms: "
-                              + s.items.map { "\($0.name)" }.joined(separator: ", "))
+                    Log.write("menuextras: \(s.items.count) icon(s) from \(Set(found.map(\.extra.pid)).count) app(s) in \(ms) ms")
+                    // No item names: the user-switching item is named after you (people paste this log publicly).
                 }
             }
         }
