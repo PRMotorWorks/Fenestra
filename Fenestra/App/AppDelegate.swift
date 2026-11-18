@@ -89,6 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         WindowSnap.shared.start()
         DragSnap.shared.start()
         HotKeys.shared.start()
+        MiddleClick.shared.start()
         DisplayMemory.shared.start()
         MenuExtras.shared.start()
         WindowTracker.shared.displaysNeededChanged()

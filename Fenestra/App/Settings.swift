@@ -276,6 +276,13 @@ final class AppSettings: ObservableObject {
     }
     /// Unpinned items kept (Windows: 25).
     @Published var clipboardLimit: Int { didSet { d.set(clipboardLimit, forKey: "clipboardLimit"); ClipboardHistory.shared.trim() } }
+    /// Middle-click a taskbar app: new window (Windows: new instance). On by default.
+    @Published var middleClickNewWindow: Bool { didSet { d.set(middleClickNewWindow, forKey: "middleClickNewWindow") } }
+    /// Middle-click a link in a web browser: opens it in a new window instead of a background tab (`MiddleClick`).
+    /// On by default (the user asked for it). Tabs close on middle-click in the browsers themselves.
+    @Published var browserMiddleClick: Bool {
+        didSet { d.set(browserMiddleClick, forKey: "browserMiddleClick"); MiddleClick.shared.configure() }
+    }
 
     private init() {
         let defs = UserDefaults.standard
@@ -347,6 +354,8 @@ final class AppSettings: ObservableObject {
         inputIndicator = InputIndicator(rawValue: d.string(forKey: "inputIndicator") ?? "") ?? .automatic
         clipboardHistory = bool("clipboardHistory", true)
         clipboardLimit = defs.object(forKey: "clipboardLimit") as? Int ?? 25
+        middleClickNewWindow = bool("middleClickNewWindow", true)
+        browserMiddleClick = bool("browserMiddleClick", true)
     }
 
     var tiles: [QSTileKind] { quickTiles.compactMap(QSTileKind.init(rawValue:)) }

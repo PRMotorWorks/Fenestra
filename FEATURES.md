@@ -22,7 +22,8 @@ Back to the [README](README.md) · [Install guide](INSTALL.md)
 - **Alignment:** centered or left.
 - **Search:** hidden, icon only, icon and label, or a search box.
 - **Running apps:** a line under each open app, longer for the app in front.
-- **Click** an app to switch to it, click again to minimize it. **Middle-click** opens a new window.
+- **Click** an app to switch to it, click again to minimize it. **Middle-click** opens a new window (can be switched
+  off).
 - **Drag** icons to reorder them. Right-click to pin or unpin.
 - **Window previews:** hover an app for live thumbnails of its windows. Close a window right from its preview.
   An app with several windows shows a picker when you click it.
@@ -157,6 +158,12 @@ Back to the [README](README.md) · [Install guide](INSTALL.md)
 - **Private by design:** passwords copied from password managers are never saved, and the history lives only in
   memory, so it starts empty when Fenestra restarts.
 - Fully keyboard-driven: arrows, Tab to an item's options, Return.
+
+## Middle-click in browsers
+
+- **Middle-click a link** in Safari, Chrome, Brave, Edge, Vivaldi, Opera or Firefox to open it in a **new window**
+  (browsers on their own open a background tab). Can be switched off in Settings > Windows > Mouse.
+- **Middle-click a tab** to close it: these browsers already do that themselves, and Fenestra leaves it to them.
 
 ## Multiple displays
 

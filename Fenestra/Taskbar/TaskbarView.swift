@@ -282,7 +282,7 @@ struct AppButton: View {
             highlighted: active,
             onLeft: { rect in TaskbarActions.click(item, anchor: rect, scope: scope) },
             onRight: { _, view in JumpListMenu.shared.show(for: item, in: view, scope: scope) },
-            onMiddle: { _ in TaskbarActions.newWindow(item) },
+            onMiddle: { _ in if AppSettings.shared.middleClickNewWindow { TaskbarActions.newWindow(item) } },
             onHoverChange: { inside, rect in
                 if inside {
                     if running { ThumbnailController.shared.hoverBegan(item: item, anchor: rect, scope: scope) }
@@ -337,7 +337,7 @@ struct WindowButton: View {
             width: nil, height: small ? 32 : 40, highlighted: active,
             onLeft: { _ in TaskbarActions.clickWindow(window, item: item) },
             onRight: { _, view in JumpListMenu.shared.show(for: item, in: view, scope: scope) },
-            onMiddle: { _ in TaskbarActions.newWindow(item) }
+            onMiddle: { _ in if AppSettings.shared.middleClickNewWindow { TaskbarActions.newWindow(item) } }
         ) {
             HStack(spacing: 8) {
                 Image(nsImage: TaskbarModel.shared.icon(for: item))

@@ -922,3 +922,41 @@ Diagnostics (needs `captionDebug`): distributed notification `local.fenestra.deb
 Settings, switches to the calendar and back, and logs each step's timeline (`grep flyouttest
 ~/Library/Logs/Fenestra-app.log`). Each opening logs `flyout: <id> prepared|built now, animation starts N ms after
 the click`.
+
+## Middle-click (2026-11-18)
+
+Asked for: middle-click closes browser tabs, opens links in a new browser window, and opens a new window from the
+taskbar, all on by default with switches in Settings.
+
+| Where | Switch | Default |
+|---|---|---|
+| Taskbar > Taskbar behaviors | Middle-click a taskbar app to open a new window (`middleClickNewWindow`) | on |
+| Windows > Mouse | Middle-click a link in a browser to open it in a new window (`browserMiddleClick`) | on |
+
+- **Taskbar:** unchanged behavior (`TaskbarActions.newWindow`: the app's Command-N menu item through Accessibility,
+  Command-N as fallback), now behind the switch.
+- **Tabs:** Safari 26 and Brave (Chromium) close a tab on middle-click themselves (checked 2026-11-18 with posted
+  middle clicks). Firefox does too. Fenestra replays the click to them untouched.
+- **Links (`Windows/MiddleClick.swift`):** an active `CGEventTap` on `otherMouseDown`/`otherMouseUp`, its own thread.
+  Button 2 over a known browser's layer-0 window (topmost window under the pointer in `CGWindowListCopyWindowInfo`,
+  ~3 ms; a Fenestra window on top means no) is held. On a background queue, `AXUIElementCopyElementAtPosition` on
+  the browser (20 to 60 ms; static text inside an `AXLink` with `AXURL`) decides:
+  - link with http/https/file address, not an in-page anchor: the browser's own new-window click at the same point,
+    Shift+click (Chromium, Firefox) or Command+Option+Shift+click (Safari, new window in front);
+  - anything else: the held press and release are replayed, marked with `eventSourceUserData` 0x46454E4D so the tap
+    lets them through. Other apps' middle presses (Blender, CAD panning) are never held.
+- Chromium builds a page's accessibility tree only once a client asks: the first hit can stop at the page's
+  `AXScrollArea`, so Fenestra asks once more after 120 ms. If that still misses, the click is replayed and the
+  browser opens a background tab as before.
+
+### Middle-click test checklist (about 2 minutes)
+
+1. Middle-click a link in Safari: a new Safari window opens in front with the link. Log: `middleclick: new window
+   for https://...`.
+2. Same in Chrome or Brave (new window in front).
+3. Middle-click a tab in each: the tab closes. Middle-click empty page space: nothing happens.
+4. Middle-click a taskbar app: a new window. Turn off Taskbar > Middle-click...: nothing happens.
+5. Turn off Windows > Mouse > Middle-click a link...: the browser opens a background tab again.
+
+Verified on 2026-11-18 with posted middle clicks: Brave link -> new window, Brave tab closed, Brave blank page
+unchanged, Safari link -> new window, Safari tab closed.

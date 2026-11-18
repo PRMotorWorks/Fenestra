@@ -137,6 +137,9 @@ enum SettingsCatalog {
                            + "Close) and the app's menus. In Automatic button size the menu button is left out where "
                            + "it would cover the app's own controls, and in Chromium and Electron apps."),
         SettingSection(page: .windows, title: "Clipboard"),
+        SettingSection(page: .windows, title: "Mouse",
+                       footer: "Works in Safari, Chrome, Brave, Edge, Vivaldi, Opera and Firefox. Middle-click a tab "
+                           + "to close it: these browsers already do that themselves."),
         SettingSection(page: .windows, title: "Multiple displays",
                        footer: "When a display comes back, its windows return to it: same place and size, still "
                            + "snapped or maximized."),
@@ -227,6 +230,10 @@ enum SettingsCatalog {
         item("endTask", .taskbar, "Taskbar behaviors", "End task: force quit an app from its right-click menu",
              "kill force quit") { _, b in
             Toggle("End task: force quit an app from its right-click menu", isOn: b.endTask)
+        },
+        item("middleClickTaskbar", .taskbar, "Taskbar behaviors", "Middle-click a taskbar app to open a new window",
+             "mouse wheel button new instance") { _, b in
+            Toggle("Middle-click a taskbar app to open a new window", isOn: b.middleClickNewWindow)
         },
         item("combine", .taskbar, "Taskbar behaviors", "Combine taskbar buttons and hide labels", "group") { _, b in
             Picker("Combine taskbar buttons and hide labels", selection: b.combine) {
@@ -388,6 +395,10 @@ enum SettingsCatalog {
                  + "pinned items included, starts empty when Fenestra restarts. Clear removes everything except "
                  + "pinned items, and what is on the clipboard now.")
                 .foregroundStyle(.secondary)
+        },
+        item("browserMiddleClick", .windows, "Mouse", "Middle-click a link in a browser to open it in a new window",
+             "mouse wheel button tab safari chrome brave firefox") { _, b in
+            Toggle("Middle-click a link in a browser to open it in a new window", isOn: b.browserMiddleClick)
         },
         item("rememberLocations", .windows, "Multiple displays",
              "Remember window locations based on monitor connection", "displays screens") { _, b in
